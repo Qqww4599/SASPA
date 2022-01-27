@@ -58,12 +58,11 @@ def main(args):
         total_params = sum(p.numel() for p in model.parameters())
         print('U_net parameter：{:8f}M'.format(total_params / 1000000))  # 確認模型參數數量
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     # 學習率動態調整方法：ReduceLROnPlateau
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
 
     scaler = GradScaler(enabled=args.use_autocast)
-
     # 初始化訓練結果資料夾(清空)
     def init_training_result_folder():
         import shutil
@@ -129,7 +128,7 @@ def main(args):
                     scaler.step(optimizer)
                     scaler.update()
                 if args.use_autocast == False:
-                    optimizer.zero_grad()
+                    optimizer.zero_grad() #要換到 103
                     loss.backward()
                     optimizer.step()
                 # 僅供測試使用!!!實際訓練要關!!!
@@ -147,14 +146,15 @@ def main(args):
             model.to('cpu')
             print('start eval!!!')
             save_path = r'./Model_Result/val_images'
+            save_path = fr'{save_path}/epoch{epoch}'
+            if os.path.exists(save_path) == False:
+                os.makedirs(save_path)
             for i, (original_image, mask, original_size) in enumerate(val_dataset):
                 x = original_image.to(torch.float)
                 with no_grad():
                     pred = model(x) # b,c,h,w
                 # print('pred.shape：',pred.shape)
-                if os.path.exists(save_path) == False:
-                    os.makedirs(save_path)
-                Save_image(original_image, pred, mask, save_path=fr'{save_path}/epoch{epoch}_num{i+1}',original_size=original_size)
+                Save_image(original_image, pred, mask, save_path=fr'{save_path}/num{i+1}',original_size=original_size)
             print('eval finish!!!')
 
         epoch = args.epoch
@@ -181,7 +181,7 @@ def main(args):
             elif args.loss_fn == 'FocalLoss': # 無法執行
                 loss = FocalLoss
             print(f'1 epoch loss = {loss}')
-            if i % int(save_freq) == 0 and loss < best_loss and i != 0:
+            if i % int(save_freq) == 0 and i != 0:
                 model.eval()
                 # 載入驗證資料集
                 val_dataset = Image2D(args.val_dataset)
@@ -198,7 +198,7 @@ def main(args):
                         # 儲存單個模型(只儲存最好的)
                         save_name = f"{args.direc}/best_model.pth"
                         torch.save(model.state_dict(), save_name)
-                        print(f'best_model is in {i} epoch', f"num{i // save_freq}_model.pt are saved!", sep='\t')
+                        print(f'best_model is in {i} epoch', f"best_model.pt are saved!", sep='\t')
                 else:
                     if safe_mode == 0:
                         # 儲存多個模型(只要比前面好就儲存)
@@ -209,10 +209,10 @@ def main(args):
                         # 儲存單個模型(只儲存最好的)
                         save_name = f"{args.direc}/best_model.pth"
                         torch.save(model.state_dict(), save_name)
-                        print(f'best_model is in {i} epoch', f"num{i // save_freq}_model.pt are saved!", sep='\t')
+                        print(f'best_model is in {i} epoch', f"best_model.pt are saved!", sep='\t')
                 best_loss = loss
 
-            if i == test_epoch:  # 測試用的epoch, test_epoch=1 代表訓練兩個epoch
+            if i+1 == epoch:  # 測試用的epoch, test_epoch=1 代表訓練兩個epoch
                 print('='*10,'last one eval','='*10)
                 val_dataset = Image2D(args.val_dataset)
                 val_dataset = DataLoader(val_dataset)
@@ -262,6 +262,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_state_dict', type=bool, default=True, help='是否只儲存權重，默認為權重')
     parser.add_argument('--loss_fn', default='weight_cross_entropy',
                         choices=['weight_cross_entropy', 'dice_coef_loss', 'IoU', 'FocalLoss'])
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
     parser.add_argument('--wce_beta', type=float, default=1e-04, help='wce_loss的wce_beta值，如果使用wce_loss時需要設定')
     parser.add_argument('--imgsize', type=int, default=256, help='圖片大小')
     parser.add_argument('--imgchan', type=int, default=3, help='訓練影像通道數')

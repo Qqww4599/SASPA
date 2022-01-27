@@ -503,6 +503,7 @@ class ResAxialAttentionUNet(nn.Module):
         x = F.relu(F.interpolate(self.decoder5(x) , scale_factor=(2,2), mode ='bilinear'))
         x = self.adjust(F.relu(x))
         # pdb.set_trace()
+        x = self.relu(x)
         return x
 
     def forward(self, x):

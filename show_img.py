@@ -146,6 +146,7 @@ def Save_image(*image,save_path,original_size):
         original_image = original_image.squeeze(0) # 去掉batch維度
     pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to HWC
     original_image = original_image.permute(1,2,0)
+    # print(pred) # H,W,C
 
     # resize to original size
     original_image = cv2.resize(original_image.numpy(),original_size,interpolation=cv2.INTER_NEAREST)
