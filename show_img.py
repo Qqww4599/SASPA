@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import argparse
-from zoo.vision_transformer import VisionTransformer
+from utils.zoo.vision_transformer import VisionTransformer
 import warnings
 
 '''

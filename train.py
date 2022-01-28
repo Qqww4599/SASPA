@@ -7,22 +7,18 @@ from torch.cuda.amp import GradScaler, autocast
 import time
 from torch.utils.tensorboard import SummaryWriter
 import warnings
+import torch.nn.functional as F
+import shutil
 
-from model import Attention
-from utils import AverageMeter
 from utils.GS_Dataloader import Make_Dataset,Image2D
 from utils.Dataloader_breastUS import ImageToImage2D,Image2D
-import Accuracy
-from utils import loss_fn
-from zoo.vision_transformer import VisionTransformer
+from utils import loss_fn, Use_model
+from utils.Use_model import Use_model
 from show_img import Save_image
-import torch.nn.functional as F
 
 import argparse
 
 def main(args):
-
-    model_name = args.modelname
     device = args.device
     save_freq = args.save_freq
     args.use_autocast = bool(args.use_autocast)
@@ -37,26 +33,7 @@ def main(args):
         train_dataset = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
     # 確定使用model種類
-    if model_name == 'Transformer_Test':
-        # model = Attention(3,heads = 1,dim_head = 1,dropout=0.5)
-        model = VisionTransformer() # 測試asyml的vision transformer code
-        total_params = sum(p.numel() for p in model.parameters())
-        print('Transformer_Test parameter：{:8f}M'.format(total_params/1000000)) # 確認模型參數數量
-    if model_name == 'MedT':
-        from zoo.MedT.lib.models.axialnet import MedT
-        model = MedT(args)
-        total_params = sum(p.numel() for p in model.parameters())
-        print('MedT parameter：{:8f}M'.format(total_params / 1000000))  # 確認模型參數數量
-    if model_name == 'gated':
-        from zoo.MedT.lib.models.axialnet import gated
-        model = gated(args)
-        total_params = sum(p.numel() for p in model.parameters())
-        print('MedT parameter：{:8f}M'.format(total_params / 1000000))  # 確認模型參數數量
-    if model_name == 'U_net':
-        from zoo import U_net
-        model = U_net.U_Net(img_ch=3, output_ch=3)
-        total_params = sum(p.numel() for p in model.parameters())
-        print('U_net parameter：{:8f}M'.format(total_params / 1000000))  # 確認模型參數數量
+    model = Use_model(args)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     # 學習率動態調整方法：ReduceLROnPlateau
@@ -65,7 +42,6 @@ def main(args):
     scaler = GradScaler(enabled=args.use_autocast)
     # 初始化訓練結果資料夾(清空)
     def init_training_result_folder():
-        import shutil
         path = './Model_Result'
         files = os.listdir(path)
         for file in files:
@@ -91,6 +67,9 @@ def main(args):
         test_epoch：需要訓練幾個epoch，代表最終訓練的epoch數量，屬於暫時型限制，最終訓練時test_epoch==arg.epoch
         save_freq：多少個epoch儲存一次checkpoint，預設為1
         '''
+        epoch = args.epoch
+        best_loss = 100
+        best_model = ''
 
         def train_one_epoch(dataloader, model):
             '''
@@ -98,8 +77,9 @@ def main(args):
             :param
                 use_autocast: whether use automatic mixed precision training, default True
             '''
-            model.to(args.device)
+            model.cuda()
             model.train()
+            train_accumulation_steps = 5 # iters per update
             for i, (image, mask) in enumerate(dataloader):
                 image, mask = image.to(device), mask.to(device)  # b c h w
                 with autocast(enabled=args.use_autocast):
@@ -113,30 +93,34 @@ def main(args):
                     FocalLoss_loss = loss_fn.FocalLoss()(output, mask)
 
                     if args.loss_fn == 'weight_cross_entropy':
-                        loss = weight_cross_entropy_loss
+                        loss = weight_cross_entropy_loss / train_accumulation_steps
                     elif args.loss_fn == 'dice_coef_loss':
-                        loss = dice_coef_loss_loss
+                        loss = dice_coef_loss_loss / train_accumulation_steps
                     elif args.loss_fn == 'IoU':
-                        loss = IoU_loss
+                        loss = IoU_loss / train_accumulation_steps
                     elif args.loss_fn == 'FocalLoss':
-                        loss = FocalLoss_loss
+                        loss = FocalLoss_loss / train_accumulation_steps
 
                 # =================backward==================
                 if args.use_autocast:
                     # 使用混合精度訓練
-                    scaler.scale(loss).backward()
+                    scaler.scale(loss).backward(retain_graph=True)
                     scaler.step(optimizer)
                     scaler.update()
                 if args.use_autocast == False:
-                    optimizer.zero_grad() #要換到 103
                     loss.backward()
-                    optimizer.step()
+                    if i % train_accumulation_steps == 0:
+                        optimizer.step()
+                        optimizer.zero_grad()
                 # 僅供測試使用!!!實際訓練要關!!!
-                # if i == 5:
+                # if i == 3:
                 #     scheduler.step(loss)
                 #     return weight_cross_entropy_loss, dice_coef_loss_loss, IoU_loss, FocalLoss_loss
                 # return all losses, including weight_cross_entropy_loss,dice_coef_loss_loss,IoU_loss,FocalLoss_loss
                 if i + 1 == len(dataloader):
+                    # if args.use_autocast == False:
+                    #     loss.backward()
+                    #     optimizer.step()
                     scheduler.step(loss)
                     return weight_cross_entropy_loss, dice_coef_loss_loss, IoU_loss, FocalLoss_loss
 
@@ -147,19 +131,21 @@ def main(args):
             print('start eval!!!')
             save_path = r'./Model_Result/val_images'
             save_path = fr'{save_path}/epoch{epoch}'
+            test_loss = 0
+
             if os.path.exists(save_path) == False:
                 os.makedirs(save_path)
             for i, (original_image, mask, original_size) in enumerate(val_dataset):
                 x = original_image.to(torch.float)
                 with no_grad():
                     pred = model(x) # b,c,h,w
+                    # Use CE as loss function
+                    test_loss += loss_fn.weight_cross_entropy(pred, mask, args.wce_beta)
                 # print('pred.shape：',pred.shape)
                 Save_image(original_image, pred, mask, save_path=fr'{save_path}/num{i+1}',original_size=original_size)
-            print('eval finish!!!')
+            test_loss = test_loss / len(val_dataset)
+            print('eval finish!!!','avg_test_loss：{:.4f}'.format(test_loss),sep='\t')
 
-        epoch = args.epoch
-        best_loss = 100
-        best_model = ''
         if args.use_autocast:  # only appear when first sample of epoch
             print('=' * 10, 'use_autocast!', '=' * 10)
         else:
@@ -178,7 +164,8 @@ def main(args):
                 loss = dice_coef_loss
             elif args.loss_fn == 'IoU':
                 loss = IoU
-            elif args.loss_fn == 'FocalLoss': # 無法執行
+            else:
+                # args.loss_fn == 'FocalLoss'無法執行
                 loss = FocalLoss
             print(f'1 epoch loss = {loss}')
             if i % int(save_freq) == 0 and i != 0:
@@ -255,7 +242,7 @@ if __name__ == '__main__':
     parser.add_argument('--epoch', default=3, type=int, help='需要跑的輪數')
     parser.add_argument('--train_dataset', required=True, type=str, help='訓練資料集位置')
     parser.add_argument('--batch_size', default=1, type=int)
-    parser.add_argument('--modelname', default='Transformer_Test')
+    parser.add_argument('--modelname', required=True, type=str)
     parser.add_argument('--dataset', choices=['GS','BreastUS'],default='GS',help='選擇使用的資料集，默認GS，可以選擇BreastUS')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--save_freq', default=1,type=int, help='多少個epoch儲存一次checkpoint')

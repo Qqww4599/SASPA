@@ -25,7 +25,7 @@ class FocalLoss(torch.nn.Module):
             target = target.view(target.size(0), target.size(1), -1)  # N,C,H,W => N,C,H*W
             target = target.transpose(1, 2)  # N,C,H*W => N,H*W,C
             target = target.contiguous().view(-1, target.size(2))  # N,H*W,C => N*H*W,C
-        # target = target.reshape(-1,1)
+        target = target.reshape(-1,1)
         # print('target：',target.shape)
         logpt = F.log_softmax(input,dim=-1)
         # return logpt, logpt.shape,target, target.shape
@@ -54,6 +54,7 @@ class FocalLoss(torch.nn.Module):
 # print(i1,i2,t1,t2,sep='\n')
 
 def IoU(y_true, y_pred, eps=1e-6):
+    '''mIoU or IoU ?'''
     # if np.max(y_true) == 0.0:
     #     return IoU(1-y_true, 1-y_pred) ## empty image; calc IoU of zeros
     intersection = torch.sum(y_true * y_pred, dim=(1,2,3))
@@ -175,24 +176,28 @@ if __name__ == '__main__':
     from torch.utils.data import DataLoader
     from einops import rearrange
 
-    dataset_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
-    mask1 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_27.bmp'
-    mask2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_28.bmp'
-
-
-    dataset = DataLoader(Make_Dataset(dataset_path))
-    for i, (image, mask) in enumerate(dataset):
-        if i == 1:
-            break
-        # print(image.shape, mask.shape, sep='\n')
-        if image.ndim or mask.ndim == 4:
-            image, mask = image.squeeze(0), mask.squeeze(0)  #移除batchsize維度
-
-            # (H,W,C) to (HW,C)
-            image, mask = rearrange(image,'h w c -> (h w) c'),rearrange(mask,'h w c -> (h w) c')
-
-        loss = weight_cross_entropy(image, mask, 0.0001)
-        print(f'loss: {loss}')
-
+    # dataset_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
+    # mask1 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_27.bmp'
+    # mask2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_28.bmp'
+    #
+    #
+    # dataset = DataLoader(Make_Dataset(dataset_path))
+    # for i, (image, mask) in enumerate(dataset):
+    #     if i == 1:
+    #         break
+    #     # print(image.shape, mask.shape, sep='\n')
+    #     if image.ndim or mask.ndim == 4:
+    #         image, mask = image.squeeze(0), mask.squeeze(0)  #移除batchsize維度
+    #
+    #         # (H,W,C) to (HW,C)
+    #         image, mask = rearrange(image,'h w c -> (h w) c'),rearrange(mask,'h w c -> (h w) c')
+    #
+    #     loss = weight_cross_entropy(image, mask, 0.0001)
+    #     print(f'loss: {loss}')
+    arr1 = torch.randn(1,3,28,28)
+    arr2 = torch.randn(1,3,28,28)
+    output = FocalLoss()(arr1,arr2)
+    print(output)
+    loss = FocalLoss()(arr1,arr2)
 
 
