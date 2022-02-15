@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import argparse
 from utils.zoo.vision_transformer import VisionTransformer
 import warnings
-
+import pdb
 '''
 此模組主要功能是「輸出模型切割效果和GT之間的差異」
 param:
@@ -66,60 +66,58 @@ def THRESH_BINARY(x, th):
     ret, th = cv2.threshold(x*255, th, 255, cv2.THRESH_BINARY_INV)
     return th
 
-def resize(image,originHW):
-    '''
-    :param image: input image(ex: image, pred, mask), size:(H,W,C)
-    :param originHW: tuple, (H,W)
-    :return: image
-    '''
-    import cv2
-    image = cv2.resize(image,originHW,interpolation=cv2.INTER_NEAREST)
-    return image
+def THRESH_BINARY_for_pred(x, th):
+    if torch.is_tensor(x):
+        # print('Input shape：', x.shape)
+        x = x.numpy()
+    # print('Input shape：', x.shape) # Input shape： (512, 512)
+    # print('Input：', x)
+    ret, th = cv2.threshold(x * 255, th, 255, cv2.THRESH_BINARY_INV)
+    return th
 
 # 不能隨便resize圖片會跑掉
 def read_image(path):
     x = cv2.imread(path)
-    filesname = os.path.split(path)[-1]
     # print(f'{filesname}.shape:{x.shape}')
     (B,G,R) = cv2.split(x)
     x = torch.tensor(cv2.merge([R,G,B]))
     return x
 
-def Show_image(*image,):
-    '''
-    input：預期傳入圖片為2張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片
-    格式為torch.tensor
-    用plt.imshow顯示。
-    '''
-    image, mask, *_ = image
-    # 影像二值化。image1表示原本影像，image2表示mask影像
-    # image1, image2 = THRESH_BINARY(image1,1), THRESH_BINARY(image2, 1)
-    # print(image2.shape)
-    image, mask = image, THRESH_BINARY(mask, 1)
-    # original = read_image(arg.test_image_input)
+# def Show_image(*image,):
+#     '''
+#     input：預期傳入圖片為2張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片
+#     格式為torch.tensor
+#     用plt.imshow顯示。
+#     '''
+#     image, mask, *_ = image
+#     # 影像二值化。image1表示原本影像，image2表示mask影像
+#     # image1, image2 = THRESH_BINARY(image1,1), THRESH_BINARY(image2, 1)
+#     # print(image2.shape)
+#     image, mask = image, THRESH_BINARY(mask, 1)
+#     # original = read_image(arg.test_image_input)
+#
+#     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
+#     plt.subplot(1, 3, 1)
+#     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+#     plt.axis('off')
+#     plt.title('original')  # 1*3的圖片 的 第1張
+#     plt.imshow(image)
+#
+#     plt.subplot(1, 3, 2)  # 1*3的圖片 的 第2張
+#     plt.xticks([]), plt.yticks([])
+#     plt.axis('off')  # 關閉座標刻度
+#     plt.title('original\n(will change to model output)')
+#     plt.imshow(mask)
+#
+#     plt.subplot(1, 3, 3)
+#     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+#     plt.axis('off')
+#     plt.title('Ground Truth')  # 1*23的圖片 的 第3張
+#     plt.imshow(mask)
+#
+#     plt.show()
 
-    # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
-    plt.subplot(1, 3, 1)
-    plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-    plt.axis('off')
-    plt.title('original')  # 1*3的圖片 的 第1張
-    plt.imshow(image)
-
-    plt.subplot(1, 3, 2)  # 1*3的圖片 的 第2張
-    plt.xticks([]), plt.yticks([])
-    plt.axis('off')  # 關閉座標刻度
-    plt.title('original\n(will change to model output)')
-    plt.imshow(mask)
-
-    plt.subplot(1, 3, 3)
-    plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-    plt.axis('off')
-    plt.title('Ground Truth')  # 1*23的圖片 的 第3張
-    plt.imshow(mask)
-
-    plt.show()
-
-def Save_image(*image,save_path,original_size):
+def Save_image(*image,save_path,original_size, channel=2):
     '''
     input：預期傳入圖片為3張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片+GT,格式為torch.tensor
     input size to be (B,C,H,W)
@@ -145,32 +143,43 @@ def Save_image(*image,save_path,original_size):
     if original_image.ndim == 4:
         original_image = original_image.squeeze(0) # 去掉batch維度
     pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to HWC
+    pred_binary = THRESH_BINARY_for_pred(pred, th=30)
     original_image = original_image.permute(1,2,0)
     # print(pred) # H,W,C
 
     # resize to original size
     original_image = cv2.resize(original_image.numpy(),original_size,interpolation=cv2.INTER_NEAREST)
     pred = cv2.resize(pred.numpy(),original_size,interpolation=cv2.INTER_NEAREST)
+    pred_binary = cv2.resize(pred_binary,original_size,interpolation=cv2.INTER_NEAREST).transpose(2,0,1)
     mask = cv2.resize(mask, original_size, interpolation=cv2.INTER_NEAREST)
-    # print(pred) # H,W,C
+    # print(pred.shape) # H,W,C
+    # pdb.set_trace()
+    if channel == 2:
+        pred = pred[:,:,0] # 取單一通道
     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
-    plt.subplot(1, 3, 1)
+    plt.subplot(2, 2, 1)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
     plt.axis('off')
     plt.title('original')  # 1*3的圖片 的 第1張
     plt.imshow(original_image)
 
-    plt.subplot(1, 3, 2)  # 1*3的圖片 的 第2張
+    plt.subplot(2, 2, 3)  # 1*3的圖片 的 第2張
     plt.xticks([]), plt.yticks([])
     plt.axis('off')  # 關閉座標刻度
     plt.title('model pred')
     plt.imshow(pred)
 
-    plt.subplot(1, 3, 3)
+    plt.subplot(2, 2, 2)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
     plt.axis('off')
     plt.title('Ground Truth')  # 1*23的圖片 的 第3張
     plt.imshow(mask)
+
+    plt.subplot(2, 2, 4)
+    plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+    plt.axis('off')
+    plt.title('pred binary')  # 1*23的圖片 的 第3張
+    plt.imshow(pred_binary[0])
 
     plt.savefig(save_path)
 
@@ -208,7 +217,7 @@ if __name__ == '__main__':
 
     pre_process, post_process = read_image(img_path).numpy(), read_image(img_path2).numpy()
     pre_process, post_process = read_image(img_path1_n), read_image(img_path2_n)
-    Show_image(pre_process, post_process) # 模組化調度使用
+    # Show_image(pre_process, post_process) # 模組化調度使用
 
     # test_mask,test_image_input = load_image_mask(arg.test_image_input, arg.mask)
     # Show_image(test_mask,test_image_input)

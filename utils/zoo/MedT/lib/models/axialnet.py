@@ -1,13 +1,8 @@
-import pdb
 import math
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn as nn
 from .utils import *
-import pdb
-import matplotlib.pyplot as plt
- 
-import random
 
 
 
@@ -502,9 +497,10 @@ class ResAxialAttentionUNet(nn.Module):
         x = torch.add(x, x1)
         x = F.relu(F.interpolate(self.decoder5(x) , scale_factor=(2,2), mode ='bilinear'))
         x = self.adjust(F.relu(x))
+        # print('output shape:',x.shape) # (1,2,256,256)
         # pdb.set_trace()
         # x = self.relu(x)
-        x = F.sigmoid(self.decoderf(x))
+        # x = F.sigmoid(x)
         return x
 
     def forward(self, x):
@@ -591,8 +587,8 @@ class medt_net(nn.Module):
         self.decoder5_p = nn.Conv2d(int(256*s) , int(128*s) , kernel_size=3, stride=1, padding=1)
 
         self.decoderf = nn.Conv2d(int(128*s) , int(128*s) , kernel_size=3, stride=1, padding=1)
-        self.adjust_p   = nn.Conv2d(int(128*s) , num_classes, kernel_size=1, stride=1, padding=0)
-        self.soft_p     = nn.Softmax(dim=1)
+        self.adjust_p = nn.Conv2d(int(128*s) , num_classes, kernel_size=1, stride=1, padding=0)
+        self.soft_p = nn.Softmax(dim=1)
 
 
     def _make_layer(self, block, planes, blocks, kernel_size=56, stride=1, dilate=False):
@@ -710,9 +706,9 @@ class medt_net(nn.Module):
                 x_loc[:,:,h*i:h*(i+1),w*j:w*(j+1)] = x_p
 
         x = torch.add(x,x_loc)
-        # x = F.relu(self.decoderf(x))
-        x = F.sigmoid(self.decoderf(x))
-        
+        x = F.relu(self.decoderf(x))
+        # x = F.sigmoid(self.decoderf(x))
+
         x = self.adjust(F.relu(x))
 
         # pdb.set_trace()
@@ -726,7 +722,7 @@ def axialunet(pretrained=False, **kwargs):
     model = ResAxialAttentionUNet(AxialBlock, [1, 2, 4, 1], s= 0.125, **kwargs)
     return model
 
-def gated(args,pretrained=False, **kwargs):
+def gated(args, pretrained=False, **kwargs):
     model = ResAxialAttentionUNet(AxialBlock_dynamic, [1, 2, 4, 1],img_size=args.imgsize, num_classes=args.imgchan,s= 0.125, **kwargs)
     return model
 
@@ -734,8 +730,19 @@ def MedT(args,pretrained=False, **kwargs):
     model = medt_net(AxialBlock_dynamic,AxialBlock_wopos, [1, 2, 4, 1], img_size=args.imgsize, num_classes=args.imgchan, s= 0.125,  **kwargs)
     return model
 
-def logo(pretrained=False, **kwargs):
-    model = medt_net(AxialBlock,AxialBlock, [1, 2, 4, 1], s= 0.125, **kwargs)
+def logo(args, pretrained=False, **kwargs):
+    model = medt_net(AxialBlock,AxialBlock, [1, 2, 4, 1], img_size=args.imgsize, num_classes=args.imgchan, s= 0.125, **kwargs)
     return model
 
 # EOF
+# if __name__ == '__main__':
+#     import argparse
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument('--imgsize', type=int, default=256, help='圖片大小')
+#     parser.add_argument('--imgchan', type=int, default=3, help='訓練影像通道數')
+#     args = parser.parse_args()
+#     model = gated(args=args)
+#     test_array = torch.randn(1,3,256,256)
+#     output = model(test_array)
+#     print(output.shape)
+#     print(output)

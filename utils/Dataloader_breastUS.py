@@ -8,6 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T
 from torchvision.transforms import functional as F
 from torchvision import transforms
+import pdb
 
 from typing import Callable
 import os
@@ -93,12 +94,14 @@ class JointTransform2D:
 
         # transforming to tensor
         image = F.to_tensor(image)
+        # pdb.set_trace()
+
         if not self.long_mask:
             mask = F.to_tensor(mask)
         else:
             mask = to_long_tensor(mask)
 
-        return image, mask
+        return image, mask.unsqueeze(0)
 
 
 class ImageToImage2D(Dataset):
@@ -187,13 +190,14 @@ class ImageToImage2D(Dataset):
         # print(image.shape)
         # read mask image
         mask = cv2.imread(masks_path, 0)
-
+        # pdb.set_trace()
         # print(mask,mask.shape,sep='\t')
         mask[mask <= 127] = 0
         mask[mask > 127] = 1
         # correct dimensions if needed
         image, mask = correct_dims(image, mask)
         # print(image.shape)
+
 
         if self.joint_transform:
             image, mask = self.joint_transform(image, mask)
@@ -203,7 +207,8 @@ class ImageToImage2D(Dataset):
             mask = torch.zeros((self.one_hot_mask, mask.shape[1], mask.shape[2])).scatter_(0, mask.long(), 1)
         # print(image)
         # print(mask)
-        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy()
+
+        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy().astype('float32')
         image = cv2.resize(image, self.img_size)
         mask = cv2.resize(mask, self.img_size)
         # mask = np.swapaxes(mask,2,0)
@@ -214,6 +219,7 @@ class ImageToImage2D(Dataset):
         mask = np.expand_dims(mask,axis=0)
         # print(image.shape)
         # print(mask.shape)
+        mask[mask != 0] = 1
         image_filename = os.path.split(images_path)[-1]
         # 注意：此處回傳的image和mask格式為torch.tenser()，維度是(H,W,1)。
         # 如果用Dataloader讀取，回傳格式為torch.tenser()，維度是(B,H,W,C)。
@@ -258,6 +264,10 @@ class Image2D(DataLoader):
         # resize完後改回原本model能接受的尺寸(B,C,H,W)
         image = np.transpose(image/255.0,(2,0,1)) # 歸一化
         mask = np.expand_dims(mask,axis=0)
+        image, mask = torch.tensor(image,dtype=torch.float32), torch.tensor(mask, dtype=torch.float32)
+
+        mask[mask <= 127] = 0
+        mask[mask > 127] = 1
         # print('BUS驗證資料集的尺寸：', image.shape, mask.shape, sep='\n')
         # 回傳沒有經過資料增量的影像+原圖尺寸(tuple)
         return image, mask, original_size
@@ -314,78 +324,23 @@ class MetricList:
         else:
             return {key: value / normalize for key, value in self.results.items()}
 
-# def THRESH_BINARY(x, th):
-#     '''影像二值化。輸入x為(H,W,C)的ndarray，th為閥值'''
-#     # print('THRESH_BINARY Input shape：',x.shape)
-#     if torch.is_tensor(x):
-#         # print('Input shape：', x.shape)
-#         x = x.numpy()
-#     # 如果最後維度不是channel(ex:C,H,W)，需要改成H,W,C。
-#     # 判定方式:如果channel不是3(RGB)或1(GRAY)
-#     if x.shape[-1] not in (1,3):
-#         x = np.transpose(x, [1,2,0])
-#         if x.shape[-1] == 1:
-#             return x
-#     # H,W,C 變成 H,W
-#     x = cv2.cvtColor(x, cv2.COLOR_BGR2GRAY)
-#     # print('Input shape：', x.shape) # Input shape： (512, 512)
-#     # print('Input：', x)
-#     ret, th = cv2.threshold(x*255, th, 255, cv2.THRESH_BINARY_INV)
-#     return th
-# def Save_image(*image,save_path):
-#     '''
-#     input：預期傳入圖片為2張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片
-#     格式為torch.tensor
-#     用plt.imshow顯示。
-#     '''
-#     matplotlib.use('Agg') #不要顯示圖片
-#     image1, image2, *_ = image
-#     # 影像二值化。image1表示原本影像，image2表示mask影像
-#     # image1, image2 = THRESH_BINARY(image1,1), THRESH_BINARY(image2, 1)
-#     # print(image2.shape)
-#     # 有時plt吃CHW有時候吃HWC?????
-#     image1, image2 = image1.permute(1,2,0), THRESH_BINARY(image2, 1) # switch to HWC
-#     # image1, image2 = image1, THRESH_BINARY(image2, 1)
-#     # original = read_image(arg.test_image_input)
-#
-#     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
-#     plt.subplot(1, 3, 1)
-#     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-#     plt.axis('off')
-#     plt.title('original')  # 1*3的圖片 的 第1張
-#     plt.imshow(image1)
-#
-#     plt.subplot(1, 3, 2)  # 1*3的圖片 的 第2張
-#     plt.xticks([]), plt.yticks([])
-#     plt.axis('off')  # 關閉座標刻度
-#     plt.title('original\n(will change to model output)')
-#     plt.imshow(image1)
-#
-#     plt.subplot(1, 3, 3)
-#     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-#     plt.axis('off')
-#     plt.title('Ground Truth')  # 1*23的圖片 的 第3張
-#     plt.imshow(image2)
-#
-#     plt.savefig(save_path)
+if __name__ == '__main__':
 
-
-# import os
-# import cv2
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import torch
-# #
-# #
-# dataset_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_dataset"
-# save_path = r'./model/Model_Result/'
-# dataset = DataLoader(Image2D(dataset_path))
-# for i, (image, mask, original_size) in enumerate(dataset):
-#     if i == 2:
-#         break
-#     # print(image.shape, mask.shape, sep='\n')
-#     if image.ndim or mask.ndim == 4:
-#         image, mask = image.squeeze(0), mask.squeeze(0)# 去掉batch維度
-#         print(image, mask, sep='\n')
-# dataloader = Image2D(dataset_path)
-# dataloader = DataLoader(dataloader)
+    import os
+    import cv2
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import torch
+    #
+    #
+    dataset_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_dataset"
+    dataset_path_train = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
+    save_path = r'./model/Model_Result/'
+    dataset = DataLoader(ImageToImage2D(dataset_path_train))
+    for i, (image, mask) in enumerate(dataset):
+        if i == 2:
+            break
+        # print(image.shape, mask.shape, sep='\n')
+        if image.ndim or mask.ndim == 4:
+            image, mask = image.squeeze(0), mask.squeeze(0)# 去掉batch維度
+            print(image, mask, sep='\n')

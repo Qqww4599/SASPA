@@ -3,6 +3,7 @@ from torch import nn
 import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
+import pdb
 
 from torch.nn.functional import cross_entropy
 from torch.nn.modules.loss import _WeightedLoss # 用於LogNLLLoss
@@ -63,6 +64,7 @@ def IoU(y_true, y_pred, eps=1e-6):
 
 
 def dice_coef_loss(y_true, y_pred):
+    '''就是Diceloss的算法'''
     def dice_coef(y_true, y_pred, smooth=1):
         '''input：image(b c h w), mask(b c h w), (1,3,512,512)'''
         # y_true, y_pred = y_true.to('cpu'), y_pred.to('cpu')
@@ -72,7 +74,7 @@ def dice_coef_loss(y_true, y_pred):
         # intersection = np.sum(multiple, axis=[1, 2, 3])
         union = torch.sum(y_true, dim=(2,3)) + torch.sum(y_pred, dim=(2,3))
         return torch.mean((2. * intersection + smooth) / (union + smooth), dim=1)
-    out = 1 - dice_coef(y_true, y_pred, smooth=1)
+    out = 1. - dice_coef(y_true, y_pred, smooth=1)
     # print(out, out.grad, sep='\t')
     return out
 
@@ -128,10 +130,19 @@ class LogNLLLoss(_WeightedLoss):
         super(LogNLLLoss, self).__init__(weight, size_average, reduce, reduction)
         self.ignore_index = ignore_index
 
+    # 預設y_input=(b,c,h,w),y_target=(b,1,h,w)，計算方式為攤平後再CE
     def forward(self, y_input, y_target):
         # y_input = torch.log(y_input + EPSILON)
-        return cross_entropy(y_input, y_target, weight=self.weight,
+        y_input = y_input.flatten(2)  # 新增
+        y_target = y_target.flatten(2).squeeze(1) # 新增
+        return cross_entropy(y_input, y_target.long(), weight=self.weight,
                              ignore_index=self.ignore_index)
+    # def forward(self, y_input, y_target):
+    #     if y_target.dim() == 4:
+    #         y_target = y_target.squeeze(0) # target的size需要是(N,H,W), output的channel數量是target的內部值(整數)
+    #     # y_input = torch.log(y_input + np.finfo(np.float32).eps)
+    #     return cross_entropy(y_input, y_target.long(), weight=self.weight,
+    #                          ignore_index=self.ignore_index)
 
 def classwise_iou(output, gt):
     """
@@ -142,12 +153,18 @@ def classwise_iou(output, gt):
     """
     EPSILON = 1e-32
     dims = (0, *range(2, len(output.shape)))
+    gt = gt.squeeze(1)# to (B,H,W)
+    gt = gt.type(torch.int64)
     gt = torch.zeros_like(output).scatter_(1, gt[:, None, :], 1)
+    o = gt.shape
     intersection = output*gt
     union = output + gt - intersection
-    classwise_iou = (intersection.sum(dim=dims).float() + EPSILON) / (union.sum(dim=dims) + EPSILON)
+    # pdb.set_trace()
+    iou_loss = (intersection.sum(dim=dims).float() + EPSILON) / (union.sum(dim=dims) + EPSILON)
+    if not len(iou_loss) == 1:
+        iou_loss = iou_loss.sum() / len(iou_loss)
 
-    return classwise_iou
+    return iou_loss
 
 def classwise_f1(output, gt):
     """
@@ -171,33 +188,66 @@ def classwise_f1(output, gt):
 
     return classwise_f1
 
+def binary_cross_entropy(x, target):
+    '''
+    input :
+        x: tensor.shape:(1,2,h,w)
+        y: tensor.shape:(1,1,h,w)
+
+    '''
+
+
+    # x = (torch.Size([1, 2, 256, 256])
+    *i,h,w = target.shape
+    x = x.squeeze(0)
+    target = target.resize(h,w) # (torch.Size([1, 256, 256]) to (256,256)
+    output = 0
+    for i in x:
+        x = x.float()
+        output = F.binary_cross_entropy_with_logits(i, target.float())
+        # output = output / x[0,1]
+    return output
+
+
 if __name__ == '__main__':
-    from GS_Dataloader import Make_Dataset
+    '''
+    單元測試階段，測試loss_fn的可行性
+    目前問題：
+        1. BCE直接使用dataset會產生多個loss，但loss必須要是scalar才行。
+        2. WCE無法準確學習到data的資訊，前面的epoch還具有分割效果，到大約3個epoch就會產生梯度爆炸的問題
+        3. LogNllloss
+    
+    '''
+    from Dataloader_breastUS import ImageToImage2D
     from torch.utils.data import DataLoader
-    from einops import rearrange
+    from zoo.MedT.lib.models.axialnet import gated
+    import argparse
 
     # dataset_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
     # mask1 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_27.bmp'
     # mask2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_28.bmp'
-    #
-    #
-    # dataset = DataLoader(Make_Dataset(dataset_path))
-    # for i, (image, mask) in enumerate(dataset):
-    #     if i == 1:
-    #         break
-    #     # print(image.shape, mask.shape, sep='\n')
-    #     if image.ndim or mask.ndim == 4:
-    #         image, mask = image.squeeze(0), mask.squeeze(0)  #移除batchsize維度
-    #
-    #         # (H,W,C) to (HW,C)
-    #         image, mask = rearrange(image,'h w c -> (h w) c'),rearrange(mask,'h w c -> (h w) c')
-    #
-    #     loss = weight_cross_entropy(image, mask, 0.0001)
-    #     print(f'loss: {loss}')
-    arr1 = torch.randn(1,3,28,28)
-    arr2 = torch.randn(1,3,28,28)
-    output = FocalLoss()(arr1,arr2)
-    print(output)
-    loss = FocalLoss()(arr1,arr2)
+    # #
+    # us_dataset_image1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\images\benign (1).png"
+    # us_dataset_mask1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\masks\benign (1).png"
+    us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
+
+
+    parser = argparse.ArgumentParser(description='Transformer Test Version')
+    parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
+    parser.add_argument('-ic', '--imgchan', type=int, default=2, help='訓練影像通道數')
+    args = parser.parse_args()
+
+    dataset = ImageToImage2D(us_dataset, img_size=(args.imgsize,args.imgsize))
+    DL = DataLoader(dataset, batch_size=4, shuffle=True)
+    model = gated(args).cuda()
+
+    for i, (image, mask) in enumerate(DL):
+        x = model(image.cuda())
+        # assert x.shape == (1,2,256,256), f'模型輸出格式與loss輸入格式不符合，輸入格式為{x.shape},應為(1,2,256,256)'
+        # o = weight_cross_entropy(x, mask, wce_beta=1e-07)
+        o = LogNLLLoss()(x, mask.cuda())
+        print(o)
+        if i == 1:
+            break
 
 
