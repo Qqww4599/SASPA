@@ -6,8 +6,12 @@ import pdb
 import segmentation_models_pytorch as smp
 import torch.optim.lr_scheduler as scheduler
 
+__name__ = []
+
 def Use_model(args):
-    # 確定使用model種類
+    '''
+    Model參數設置
+    '''
     model_name = str(args.modelname)
     if model_name == 'VisionTransformer':
         from .zoo.vision_transformer import VisionTransformer
@@ -34,18 +38,31 @@ def Use_model(args):
         # model.reset_classifier()
     if model_name == 'unet_resnet34':
         model = smp.Unet(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=2)
-        return model
+    if model_name == 'unet++_resnet34':
+        model = smp.UnetPlusPlus(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=2)
+    if model_name == 'medt_retrofit':
+        from .zoo.medt_retrofit import medt_retrofit_model
+        model = medt_retrofit_model(args)
+
 
 
     model.to(args.device)
     total_params = sum(p.numel() for p in model.parameters())
-    print('MedT parameter：{:8f}M'.format(total_params / 1000000))  # 確認模型參數數量
+    print('{} parameter：{:8f}M'.format(model_name,total_params / 1000000))  # 確認模型參數數量
     return model
+def use_opt(args, model):
+    opt = args.optimizer
+    if opt == 'adam':
+        return torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    if opt == 'adamw':
+        return torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-5)
 
 def use_scheduler(args, opt):
     scheduler_name = str(args.scheduler)
     if scheduler_name == 'ReduceLROnPlateau':
         return scheduler.ReduceLROnPlateau(optimizer=opt, mode='min', factor=0.5, patience=10, verbose=True)
+    if scheduler_name == 'CosineAnnealingLR':
+        return scheduler.CosineAnnealingLR(optimizer=opt, T_max=10) # T_max是週期的1/2
 
 
 

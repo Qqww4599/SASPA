@@ -4,6 +4,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
 import pdb
+import matplotlib.pyplot as plt
 
 from torch.nn.functional import cross_entropy
 from torch.nn.modules.loss import _WeightedLoss # 用於LogNLLLoss
@@ -46,22 +47,23 @@ class FocalLoss(torch.nn.Module):
         else:
             return loss.sum()
 
-# import torch
-#
-# m = FocalLoss()
-# x = torch.randn(1,3,256,256)
-# y = torch.randn(1,3,256,256)
-# i1,i2,t1,t2 = m(x,y)
-# print(i1,i2,t1,t2,sep='\n')
+def Binarization(x, th):
+    x = x*255
+    x[x>=th] = 1
+    x[x<th] = 0
+    return x
 
-def IoU(y_true, y_pred, eps=1e-6):
-    '''mIoU or IoU ?'''
-    # if np.max(y_true) == 0.0:
-    #     return IoU(1-y_true, 1-y_pred) ## empty image; calc IoU of zeros
-    intersection = torch.sum(y_true * y_pred, dim=(1,2,3))
-    union = torch.sum(y_true, dim=(1,2,3)) + torch.sum(y_true, dim=(1,2,3)) - intersection
-    return -torch.mean( (intersection + eps) / (union + eps), dim=0)
+def scaling(x):
+    max = x.max()
+    min = x.min()
+    dist = max-min
+    if dist == 0:
+        return x
+    return (x - min) / dist
 
+def sigmoid_scaling(x):
+    x = torch.sigmoid(x) # 用torch內建方法
+    return x
 
 def dice_coef_loss(y_true, y_pred):
     '''就是Diceloss的算法'''
@@ -75,6 +77,7 @@ def dice_coef_loss(y_true, y_pred):
         union = torch.sum(y_true, dim=(2,3)) + torch.sum(y_pred, dim=(2,3))
         return torch.mean((2. * intersection + smooth) / (union + smooth), dim=1)
     out = 1. - dice_coef(y_true, y_pred, smooth=1)
+    out = out.sum() / len(y_true)
     # print(out, out.grad, sep='\t')
     return out
 
@@ -144,22 +147,47 @@ class LogNLLLoss(_WeightedLoss):
     #     return cross_entropy(y_input, y_target.long(), weight=self.weight,
     #                          ignore_index=self.ignore_index)
 
+def IoU(y_pred ,y_true,  eps=1e-32):
+    '''IoU
+    y_pred:(b,2,h,w)
+    y_true:(b,1,h,w)
+    '''
+    return 0
+    # assert y_true.shape == (args.batchsize, 1, args.imgsize, args.imgsize)
+    # assert y_pred.shape == (args.batchsize, 2, args.imgsize, args.imgsize)
+    # y_pred = scaling(y_pred)
+    # y_pred = (y_pred != 0).float()
+    # y_pred = Binarization(scaling(y_pred), th=100) # 歸一化+二值化
+    # y_pred = scaling(y_pred)
+    # y_pred = y_pred.flatten(3)
+    intersection = y_pred * y_true
+    # pdb.set_trace()
+    union = y_pred + y_true - intersection
+    intersection = intersection.sum(dim=(0,2,3)) # (b,c*h*w), clip by channels, expect shape :[c nums]
+    # pdb.set_trace()
+    union = union.sum(dim=(0,2,3)) # (b,c*h*w), clip by channels, expect shape :[c nums]
+    output = (intersection + eps) / (union + eps)
+    return output
+
 def classwise_iou(output, gt):
     """
     來自MedT metrics.py
     Args:
         output: torch.Tensor of shape (n_batch, n_classes, image.shape)
-        gt: torch.LongTensor of shape (n_batch, image.shape)
+        gt: torch.LongTensor of shape (n_batch, 1, image.shape)
     """
+    # assert gt.shape == (args.batchsize, 1, args.imgsize, args.imgsize)
+    # assert output.shape == (args.batchsize, 2, args.imgsize, args.imgsize)
     EPSILON = 1e-32
+    # EPSILON = 0
     dims = (0, *range(2, len(output.shape)))
     gt = gt.squeeze(1)# to (B,H,W)
     gt = gt.type(torch.int64)
+    # 調整gt的class數，變成和output相同，(4,2,h,w), 兩個dim為相反陣列()
+    # EX：[[1,1,0,0,1,0,1],[0,0,1,1,0,1,0]]
     gt = torch.zeros_like(output).scatter_(1, gt[:, None, :], 1)
-    o = gt.shape
     intersection = output*gt
     union = output + gt - intersection
-    # pdb.set_trace()
     iou_loss = (intersection.sum(dim=dims).float() + EPSILON) / (union.sum(dim=dims) + EPSILON)
     if not len(iou_loss) == 1:
         iou_loss = iou_loss.sum() / len(iou_loss)
@@ -185,6 +213,8 @@ def classwise_f1(output, gt):
     precision = (true_positives + epsilon) / (selected + epsilon)
     recall = (true_positives + epsilon) / (relevant + epsilon)
     classwise_f1 = 2 * (precision * recall) / (precision + recall)
+    if not len(classwise_f1) == 1:
+        classwise_f1 = classwise_f1.sum() / len(classwise_f1)
 
     return classwise_f1
 
@@ -209,6 +239,7 @@ def binary_cross_entropy(x, target):
     return output
 
 
+
 if __name__ == '__main__':
     '''
     單元測試階段，測試loss_fn的可行性
@@ -220,9 +251,12 @@ if __name__ == '__main__':
     '''
     from Dataloader_breastUS import ImageToImage2D
     from torch.utils.data import DataLoader
-    from zoo.MedT.lib.models.axialnet import gated
+    from Use_model import Use_model
+    from zoo.MedT.lib.models.axialnet import MedT
     import argparse
-
+    import torch
+    import segmentation_models_pytorch as smp
+    import sys
     # dataset_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
     # mask1 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_27.bmp'
     # mask2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_28.bmp'
@@ -230,24 +264,79 @@ if __name__ == '__main__':
     # us_dataset_image1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\images\benign (1).png"
     # us_dataset_mask1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\masks\benign (1).png"
     us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
+    test_ds = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
 
-
-    parser = argparse.ArgumentParser(description='Transformer Test Version')
+    # assign parameters
+    parser = argparse.ArgumentParser(description='Testers')
     parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
     parser.add_argument('-ic', '--imgchan', type=int, default=2, help='訓練影像通道數')
+    parser.add_argument('-b', '--batchsize', type=int, default=1, help='batchsize')
+    parser.add_argument('-mn', '--modelname', default='unet++_resnet34')
+    parser.add_argument('--device', default='cuda', help='是否使用GPU訓練')
+
     args = parser.parse_args()
 
-    dataset = ImageToImage2D(us_dataset, img_size=(args.imgsize,args.imgsize))
-    DL = DataLoader(dataset, batch_size=4, shuffle=True)
-    model = gated(args).cuda()
+    # build dataloader and model
+    dataset = ImageToImage2D(test_ds, img_size=(args.imgsize,args.imgsize), merge_train=False)
+    DL = DataLoader(dataset, batch_size=args.batchsize, shuffle=True)
+    # model = MedT(args).cuda()
+    model = Use_model(args)
+
+    # load model from trained model
+    model_state = r"D:\Programming\AI&ML\model\TotalResult_HAND\20220223\test1\best_model.pth"
+    model.load_state_dict(torch.load(model_state))
+    model.eval()
 
     for i, (image, mask) in enumerate(DL):
-        x = model(image.cuda())
+        oriout = out = model(image.cuda())
+
+        assert image.shape == (args.batchsize, 3, args.imgsize, args.imgsize), f'correct:{image.shape},'# confirm input format
+        assert mask.shape == (args.batchsize, 1, args.imgsize, args.imgsize), f'correct:{mask.shape},' # confirm input format
+        out = sigmoid_scaling(out) # 使用sigmoid歸一化
+        out_iou = (out > 0.333).float() # 影像二值化
+        # out_iou = out
+        # pdb.set_trace()
         # assert x.shape == (1,2,256,256), f'模型輸出格式與loss輸入格式不符合，輸入格式為{x.shape},應為(1,2,256,256)'
         # o = weight_cross_entropy(x, mask, wce_beta=1e-07)
-        o = LogNLLLoss()(x, mask.cuda())
-        print(o)
-        if i == 1:
+        o = LogNLLLoss()(out, mask.cuda())
+        iou = classwise_iou(out_iou,mask.cuda())
+        f1_s = classwise_f1(out,mask.cuda()) # 這邊有用
+        iou_test = IoU(out_iou,mask.cuda())
+        print('f1:',f1_s, 'IoU:',iou, 'iou_myself:',iou_test)
+
+        # sys.exit()
+        out = out.permute(0,3,2,1).to('cpu').detach().numpy()
+        oriout = oriout.permute(0,3,2,1).to('cpu').detach().numpy()
+        out_iou = out_iou.permute(0,3,2,1).to('cpu').detach().numpy()
+        #顯示影像
+        # pdb.set_trace()
+        plt.subplot(2,2,1)
+        plt.axis('off')
+        plt.xticks([]),plt.yticks([])
+        plt.title('original')
+        plt.imshow(image.squeeze(0).permute(2,1,0))
+
+        plt.subplot(2, 2, 2)
+        plt.axis('off')
+        plt.xticks([]), plt.yticks([])
+        plt.title('mask')
+        plt.imshow(mask.squeeze(0).permute(2,1,0))
+
+        plt.subplot(2,2,3)
+        plt.axis('off')
+        plt.xticks([]),plt.yticks([])
+        plt.title('output')
+        plt.imshow(oriout.squeeze(0)[:,:,1])
+
+        plt.subplot(2, 2, 4)
+        plt.axis('off')
+        plt.xticks([]), plt.yticks([])
+        plt.title('output bi')
+        plt.imshow(out_iou.squeeze(0)[:, :, 1])
+
+        plt.show()
+
+        if i == 0:
             break
 
 

@@ -101,8 +101,7 @@ class JointTransform2D:
         else:
             mask = to_long_tensor(mask)
 
-        return image, mask.unsqueeze(0)
-
+        return image, mask
 
 class ImageToImage2D(Dataset):
     """
@@ -183,46 +182,33 @@ class ImageToImage2D(Dataset):
     def __getitem__(self, idx):
         images_path, masks_path = self.images_list[idx], self.masks_list[idx]
         # read image
-        # print(os.path.join(self.input_path, image_filename))
-        # print(os.path.join(self.output_path, image_filename[: -3] + "png"))
-        # print(os.path.join(self.input_path, image_filename))
         image = cv2.imread(images_path)
-        # print(image.shape)
-        # read mask image
         mask = cv2.imread(masks_path, 0)
-        # pdb.set_trace()
-        # print(mask,mask.shape,sep='\t')
         mask[mask <= 127] = 0
         mask[mask > 127] = 1
         # correct dimensions if needed
         image, mask = correct_dims(image, mask)
-        # print(image.shape)
-
-
-        if self.joint_transform:
-            image, mask = self.joint_transform(image, mask)
+        # print(image.shape, mask.shape)
 
         if self.one_hot_mask:
             assert self.one_hot_mask > 0, 'one_hot_mask must be nonnegative'
             mask = torch.zeros((self.one_hot_mask, mask.shape[1], mask.shape[2])).scatter_(0, mask.long(), 1)
-        # print(image)
-        # print(mask)
+        if self.joint_transform:
+            # 原來一直都有呼叫這個函式但是我不知道= =，目前沒被賦予功能。
+            image, mask = self.joint_transform(image, mask)
 
-        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy().astype('float32')
+        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy()
+
         image = cv2.resize(image, self.img_size)
         mask = cv2.resize(mask, self.img_size)
-        # mask = np.swapaxes(mask,2,0)
-        # print(image.shape)
-        # print(mask.shape)
-        # mask = np.transpose(mask,(2,0,1)) # mask輸出只有1 channel(沒有channel dim)，不需要換維度，未來須修正。
+
         image = np.transpose(image,(2,0,1))
         mask = np.expand_dims(mask,axis=0)
-        # print(image.shape)
-        # print(mask.shape)
+
         mask[mask != 0] = 1
         image_filename = os.path.split(images_path)[-1]
-        # 注意：此處回傳的image和mask格式為torch.tenser()，維度是(H,W,1)。
-        # 如果用Dataloader讀取，回傳格式為torch.tenser()，維度是(B,H,W,C)。
+        # 注意：此處回傳的image和mask格式為torch.tenser()，維度是(C,H,W)。
+        # 如果用Dataloader讀取，回傳格式為torch.tenser()，維度是(B,C,H,W)。
 
         # print('BreastUS資料集輸出影像尺寸：', image.shape, mask.shape, sep='\n')
         return image, mask
@@ -336,7 +322,8 @@ if __name__ == '__main__':
     dataset_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_dataset"
     dataset_path_train = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
     save_path = r'./model/Model_Result/'
-    dataset = DataLoader(ImageToImage2D(dataset_path_train))
+    train_tf = JointTransform2D(crop=(32,32), color_jitter_params=None)
+    dataset = DataLoader(ImageToImage2D(dataset_path_train,joint_transform=train_tf))
     for i, (image, mask) in enumerate(dataset):
         if i == 2:
             break

@@ -26,19 +26,6 @@ param:
 # img_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_1.bmp'
 # img_path2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_2.bmp'
 
-def import_model(model_path):
-    '''
-    :param model_path, path_like，傳入模型位置:
-    :return:
-    '''
-
-    model_path = model_path
-    model = VisionTransformer()
-    model.load_state_dict(torch.load(model_path))
-    model.eval()
-
-    return model
-
 def add_batch_dim(x):
     '''增加batch維度，但目前沒作用'''
     if x.ndim == 3:
@@ -117,7 +104,7 @@ def read_image(path):
 #
 #     plt.show()
 
-def Save_image(*image,save_path,original_size, channel=2):
+def Save_image(*image,save_path,original_size, channel=2, th=30):
     '''
     input：預期傳入圖片為3張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片+GT,格式為torch.tensor
     input size to be (B,C,H,W)
@@ -142,8 +129,8 @@ def Save_image(*image,save_path,original_size, channel=2):
         mask = mask.squeeze(0) # 去掉batch維度
     if original_image.ndim == 4:
         original_image = original_image.squeeze(0) # 去掉batch維度
-    pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to HWC
-    pred_binary = THRESH_BINARY_for_pred(pred, th=30)
+    pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to H,W,C
+    pred_binary = THRESH_BINARY_for_pred(pred, th=th)
     original_image = original_image.permute(1,2,0)
     # print(pred) # H,W,C
 
@@ -155,7 +142,7 @@ def Save_image(*image,save_path,original_size, channel=2):
     # print(pred.shape) # H,W,C
     # pdb.set_trace()
     if channel == 2:
-        pred = pred[:,:,0] # 取單一通道
+        pred = pred[:,:,1] # 取單一通道，取第二個通道效果比較好
     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
     plt.subplot(2, 2, 1)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度

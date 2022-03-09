@@ -10,10 +10,11 @@ import torch.nn.functional as F
 import shutil
 from torchvision.utils import save_image
 
-from utils.GS_Dataloader import Make_Dataset,Image2D
-from utils.Dataloader_breastUS import ImageToImage2D,Image2D
+from utils.GS_Dataloader import Make_Dataset
+from utils.Dataloader_breastUS import ImageToImage2D,Image2D,JointTransform2D
 from utils import loss_fn, Use_model
-from utils.Use_model import Use_model, use_scheduler
+# from utils.Use_model import Use_model, use_scheduler
+from utils.Use_model import *
 from show_img import Save_image
 from utils.remove_readonly import remove_readonly
 
@@ -31,13 +32,15 @@ def main(args):
         train_dataset = Make_Dataset(args.train_dataset,img_size=(args.imgsize,args.imgsize))
         train_dataset = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     elif args.dataset == 'BreastUS':
+        # train_tf = JointTransform2D()
+        # train_dataset = ImageToImage2D(args.train_dataset,img_size=(args.imgsize,args.imgsize),joint_transform=train_tf)
         train_dataset = ImageToImage2D(args.train_dataset,img_size=(args.imgsize,args.imgsize))
         train_dataset = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     # 確定使用model種類
     model = Use_model(args)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    # 學習率動態調整方法：ReduceLROnPlateau
+    # 選擇optimizer種類，default: adam
+    optimizer = use_opt(args, model)
+    # 學習率動態調整方法，default: CosineAnnealingLR
     scheduler = use_scheduler(args, optimizer)
 
     scaler = GradScaler(enabled=args.use_autocast)
@@ -67,17 +70,13 @@ def main(args):
             '''
             model.cuda()
             model.train()
-            train_accumulation_steps = 4 # iters per update
+            train_accumulation_steps = args.train_accumulation_steps # iters per update
             for i, (image, mask) in enumerate(dataloader):
                 image, mask = image.to(device), mask.to(device)  # b c h w
                 with autocast(enabled=args.use_autocast):
                     output = model(image)  # b,c,h,w
-                    # output = F.log_softmax(output, dim=1)
-                    # print(image, image.shape, output, output.shape, sep='\n')
                     # loss計算
                     loss = choose_loss_fn(output, mask) / train_accumulation_steps
-
-                # pdb.set_trace()
                 # =================backward==================
                 if args.use_autocast:
                     # 使用混合精度訓練
@@ -95,20 +94,17 @@ def main(args):
                     return loss
                 # return all losses, including weight_cross_entropy_loss,dice_coef_loss_loss,IoU_loss,FocalLoss_loss
                 if i + 1 == len(dataloader):
-                    # if args.use_autocast == False:
-                    #     loss.backward()
-                    #     optimizer.step()
                     scheduler.step(loss)
                     return loss
 
         # 測試val資料集，比較結果包含原影像、model輸出、GT
-        def eval(val_dataset, model, epoch):
+        def eval(val_dataset, model, epoch, binarization=False, scaling=False):
             model.eval()
             model.to('cpu')
             print('start eval!!!')
             save_path = r'./Model_Result/val_images'
             save_path = fr'{save_path}/epoch{epoch}'
-            test_loss = 0
+            test_loss, f1, iou, iou_test = 0., 0., 0., 0.
 
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
@@ -116,13 +112,27 @@ def main(args):
                 x = original_image.to(torch.float32)
                 with no_grad():
                     pred = model(x) # b,c,h,w
+                    # pdb.set_trace()
+                    # pred_ori = pred.clone()
                     # Use loss function
+                    if scaling:
+                        pred = loss_fn.sigmoid_scaling(pred) # sigmoid歸一化
+                    if binarization:
+                        pred = (pred > args.threshold).float() # th自行設定，設定為-1效果還不錯(不使用歸一化的狀況)，詳細看loss_fn單元測試
                     test_loss += choose_loss_fn(pred, mask)
+                    f1 += loss_fn.classwise_f1(pred, mask)
+                    iou += loss_fn.classwise_iou(pred, mask)
                 # print('pred.shape：',pred.shape)
-                Save_image(original_image, pred, mask, save_path=fr'{save_path}/num{i+1}',original_size=original_size
-                           , channel=args.imgchan)
-            test_loss = test_loss / len(val_dataset)
-            print('eval finish!!!','avg_eval_loss：{:.4f}'.format(test_loss),sep='\t')
+                Save_image(original_image, pred, mask, save_path=fr'{save_path}/num{i + 1}',
+                           original_size=original_size
+                           , channel=args.imgchan, th=int(args.threshold * 255))
+            val_loss = test_loss / len(val_dataset)
+            f1 = f1 / len(val_dataset)
+            iou = iou / len(val_dataset)
+            iou_test = iou_test / len(val_dataset)
+            print(f'epoch {epoch} validation.','avg_eval_loss：{:.4f}, f1 score：{:.4f}, mIoU score：{:.4f}'.format(test_loss,f1.item(),iou.item()),
+                  sep='\t')
+            return val_loss, f1, iou, iou_test
 
         if args.use_autocast:  # only appear when first sample of epoch
             print('=' * 10, 'use_autocast!', '=' * 10)
@@ -131,7 +141,8 @@ def main(args):
         for i, _ in enumerate(range(epoch)):
             # return 4 type of loss
             loss = train_one_epoch(train_dataset, model)
-            writer.add_scalar(f'{args.loss_fn} loss', scalar_value=loss, global_step=i)
+            writer.add_scalar(f'training {args.loss_fn} loss', scalar_value=loss, global_step=i)
+
             print(f'1 epoch loss = {loss}')
 
             if i % int(save_freq) == 0:
@@ -139,8 +150,11 @@ def main(args):
                 # 載入驗證資料集
                 val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize))
                 val_dataset = DataLoader(val_dataset)
-                eval(val_dataset,model,i)
-                print('1 epoch finish!!!')
+                val_loss, f1, iou, iou_test = eval(val_dataset,model,i, binarization=False, scaling=False) # must set scaling and binarization
+                writer.add_scalar('val_loss', scalar_value=val_loss, global_step=i)
+                writer.add_scalar('f1 score', scalar_value=f1, global_step=i)
+                writer.add_scalar('mIoU score', scalar_value=iou, global_step=i)
+                writer.add_scalar('iou_myself', scalar_value=iou_test, global_step=i)
                 if args.savemodel:
                     save_model_mode(model, safe_mode, save_freq, i)
 
@@ -148,7 +162,7 @@ def main(args):
                 print('='*10,'last one eval','='*10)
                 val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize))
                 val_dataset = DataLoader(val_dataset)
-                eval(val_dataset, model, i+1)
+                eval(val_dataset, model, i+1, binarization=False, scaling=False)
                 print('='*10,'last one eval finish!!!!!','='*10)
                 if args.savemodel:
                     save_model_mode(model, safe_mode, save_freq, i+1)
@@ -164,29 +178,44 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Transformer Test Version')
 
+    # Training parameter setting
     parser.add_argument('--epoch', default=3, type=int, help='需要跑的輪數')
-    parser.add_argument('-ds_path', '--train_dataset', required=True, type=str, help='訓練資料集位置')
     parser.add_argument('-bs', '--batch_size', default=1, type=int)
-    parser.add_argument('-model', '--modelname', required=True, type=str)
-    parser.add_argument('-ds', '--dataset', choices=['GS','BreastUS'],default='GS',help='選擇使用的資料集，默認GS，可以選擇BreastUS')
-    parser.add_argument('--device', default='cuda')
-    parser.add_argument('-sf', '--save_freq', default=1,type=int, help='多少個epoch儲存一次checkpoint')
-    parser.add_argument('--save_state_dict', type=bool, default=True, help='是否只儲存權重，默認為權重')
-    parser.add_argument('-loss', '--loss_fn', default='wce',
-                        choices=['wce', 'dice_coef_loss', 'IoU', 'FocalLoss', 'bce', 'lll', 'clsiou'])
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('-wce', '--wce_beta', type=float, default=1e-04, help='wce_loss的wce_beta值，如果使用wce_loss時需要設定')
     parser.add_argument('-is', '--imgsize', type=int, default=256, help='圖片大小')
     parser.add_argument('-ic', '--imgchan', type=int, default=2, help='model輸出影像通道數(grayscale)')
-    parser.add_argument('--direc', default='./Model_Result', type=str, help='directory to save')
+    parser.add_argument('-model', '--modelname', required=True, type=str)
+    parser.add_argument('-ds_path', '--train_dataset', required=True, type=str, help='訓練資料集位置')
     parser.add_argument('-vd', '--val_dataset', type=str, help='驗證用資料集所在位置')
+
+
+
+    # Model training setting
+    parser.add_argument('--device', default='cuda', help='是否使用GPU訓練')
+    parser.add_argument('-ds', '--dataset', choices=['GS','BreastUS'],default='GS',help='選擇使用的資料集，默認GS，可以選擇BreastUS')
     parser.add_argument('--use_autocast', type=int, help='是否使用混和精度訓練')
-    parser.add_argument('-r', '--run_formal', default='yes', type=str, choices=['yes', 'no'], help='是否是正式訓練')
+    parser.add_argument('--threshold', default=0.333, type=int, help='設定model output後二值化的threshold, 介於0-1之間')
+    parser.add_argument('--train_accumulation_steps', default=4, type=int, help='多少iters更新一次權重(可減少顯存負擔)')
+
+    # Optimizer Setting
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--scheduler', type=str, default='CosineAnnealingLR', help='使用的scheduler')
+    parser.add_argument('-opt', '--optimizer', type=str, default='adam', help='使用的optimizer')
+
+    # Loss function and Loss schedule
+    parser.add_argument('-loss', '--loss_fn', default='wce',
+                        choices=['wce', 'dice_coef_loss', 'IoU', 'FocalLoss', 'bce', 'lll', 'clsiou'])
+    parser.add_argument('-wce', '--wce_beta', type=float, default=1e-04, help='wce_loss的wce_beta值，如果使用wce_loss時需要設定')
+
+    # Save Setting
+    parser.add_argument('-sf', '--save_freq', default=1,type=int, help='多少個epoch儲存一次checkpoint')
+    parser.add_argument('--save_state_dict', type=bool, default=True, help='是否只儲存權重，默認為權重')
     parser.add_argument('--savemodel', type=bool, default=False, help='是否儲存模型')
-    parser.add_argument('--scheduler', type=str, default='ReduceLROnPlateau', help='使用的scheduler')
+    parser.add_argument('-r', '--run_formal', default='yes', type=str, choices=['yes', 'no'], help='是否是正式訓練(if not, train 20 iters for each epoch)')
+    parser.add_argument('--direc', default='./Model_Result', type=str, help='directory to save')
+
+
     # group = parser.add_mutually_exclusive_group() # 新增互斥參數
-    # group.add_argument('--input_A', default='input_A', action='store_ture')
-    # group.add_argument('--input_B', action='store_false')
+
     args = parser.parse_args()
 
 

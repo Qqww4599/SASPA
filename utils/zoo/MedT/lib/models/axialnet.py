@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from .utils import *
+import pdb
 
 
 
@@ -735,14 +736,14 @@ def logo(args, pretrained=False, **kwargs):
     return model
 
 # EOF
-# if __name__ == '__main__':
-#     import argparse
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument('--imgsize', type=int, default=256, help='圖片大小')
-#     parser.add_argument('--imgchan', type=int, default=3, help='訓練影像通道數')
-#     args = parser.parse_args()
-#     model = gated(args=args)
-#     test_array = torch.randn(1,3,256,256)
-#     output = model(test_array)
-#     print(output.shape)
-#     print(output)
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--imgsize', type=int, default=256, help='圖片大小')
+    parser.add_argument('--imgchan', type=int, default=3, help='訓練影像通道數')
+    args = parser.parse_args()
+    model = gated(args=args)
+    test_array = torch.randn(1,3,256,256)
+    output = model(test_array)
+    print(output.shape)
+    print(output)
