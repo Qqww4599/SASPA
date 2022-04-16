@@ -17,6 +17,7 @@ from utils.loss_fn import *
 from utils.Dataloader_breastUS import Image2D
 import sys
 import torch.nn.functional as F
+import time
 
 import argparse
 
@@ -44,6 +45,7 @@ def args_parser(config):
         binarization_th = cfg.getint('model_set', 'binarization_th')
         binarization = cfg.getboolean('model_set', 'binarization') # 取得bool
         scale = cfg.getboolean('model_set', 'scale') # 取得bool
+        save_path = cfg.get('model_set', 'save_path')
 
     parser.add_argument('-mp','--model_path', type=str, default=model_path)
     parser.add_argument('-mn','--modelname', default=modelname, type=str)
@@ -51,7 +53,7 @@ def args_parser(config):
     parser.add_argument('-tdp','--test_dataset_path', type=str, default=test_dataset_path, help='測試資料集位置')
     parser.add_argument('--load_state_dict', type=bool, help='是否只載入權重，默認載入權重')
     parser.add_argument('--mode', type=bool, help='是否只載入權重，默認載入權重')
-    parser.add_argument('--save_path', type=str, default="./Model_Result/test_files", help='圖片儲存位置')
+    parser.add_argument('--save_path', type=str, default=save_path, help='圖片儲存位置')
     parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
     parser.add_argument('-ic', '--imgchan', type=int, default=2, help='model輸出影像通道數(grayscale)')
     parser.add_argument('--device', default='cuda', help='是否使用GPU訓練')
@@ -61,8 +63,9 @@ def args_parser(config):
     parser.add_argument('--ds_mask_gray', type=bool, default=True, help='mask是否輸出灰階')
     # pred輸出設定
     parser.add_argument('--scale', type=bool, default=scale, help='pred輸出是否要經過sigmoid scale')
-    parser.add_argument('--binarization', type=bool, default=binarization, help='pred輸出是否要經過binarization')
-    parser.add_argument('--binarization_th', type=int, default=binarization_th, help='pred輸出是否要經過binarization')
+    parser.add_argument('--binarization', type=bool, default=binarization, help='')
+    parser.add_argument('--binarization_th', type=int, default=binarization_th, help='')
+    parser.add_argument('--adp_bi', type=int, default=binarization_th, help='自適應二值化')
 
     args = parser.parse_args()
 
@@ -128,18 +131,27 @@ class test_dataloader(DataLoader):
         return img_out, mask_out, (original_img_size,original_mask_size)
 
 def calculate(model_out, mask):
-    iou = classwise_iou(model_out, mask.cuda())
+    iou = IoU(model_out, mask.cuda())
     f1_s = classwise_f1(model_out, mask.cuda())  # 這邊有用
     # print('f1:', f1_s, 'IoU:', iou)
-    return f1_s, iou
+    return f1_s.cpu().detach().numpy().astype(float), iou.cpu().detach().numpy()
+
+def adaptiveThreshold(img):
+    img = img[:,:,1].numpy() * 255
+    img = img.astype(np.uint8)
+    assert type(img)==np.ndarray, f'{type(img)}'
+    img = cv2.medianBlur(img,5)
+    th1 = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,11,2)
+    th2 = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,255,2)
+
+    return th1,th2
 
 def main():
     args = args_parser(config)
-
     dataloader = test_dataloader(args.test_dataset_path, args=args)
     dataloader = DataLoader(dataloader)
 
-    save = True # 顯示圖片或儲存圖片
+    save = False # 顯示圖片或儲存圖片
     # 載入模型
     model = Use_model(args)
     model.load_state_dict(torch.load(args.model_path)) # 載入權重
@@ -148,12 +160,15 @@ def main():
     binarization_th = args.binarization_th / 255.
     f1_final, iou_final = 0., 0.
 
+    infer_time = 0
     for i, (image ,mask, size) in enumerate(dataloader):
         assert type(image) == torch.Tensor, f'correct type is torch.Tensor, now is {type(image)}'
         assert image.shape == (args.batchsize, 3, args.imgsize, args.imgsize), f'correct:{image.shape}, should be (1,3,h,w)'# confirm input format
         graph_num = 2
         # print(args.scale, args.binarization, args.binarization_th)
-        pred = model(image.cuda())
+        time_start = time.time()
+        pred, _ = model(image.cuda())
+        infer_time += time.time() - time_start
         if args.scale:
             pred = sigmoid_scaling(pred) # 使用sigmoid歸一化
         if args.binarization:
@@ -163,6 +178,37 @@ def main():
             f1_final += f1
             iou_final += iou
             graph_num += 1
+        if args.adp_bi:
+
+
+            pred = pred.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,2
+            image = image.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,3
+            mean_th, gussan_th = adaptiveThreshold(pred)
+            plt.subplot(1, graph_num, 1)
+            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+            plt.axis('off')
+            plt.title('image')  # 1*3的圖片 的 第1張
+            plt.imshow(image)
+
+            plt.subplot(1, graph_num, 2)
+            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+            plt.axis('off')
+            plt.title('gussan_th_blend')  # 1*3的圖片 的 第1張，影像融合
+            plt.imshow(gussan_th, alpha=0.3)
+            plt.imshow(image, alpha=0.7)
+
+            plt.subplot(1, graph_num, 3)
+            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+            plt.axis('off')
+            plt.title('pred')  # 1*3的圖片 的 第1張
+            plt.imshow(pred[:,:,1])
+
+
+            plt.show()
+            if i == 2:
+                break
+            continue
+
         if args.save_result:
             pred = pred.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,2
             image = image.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,3
@@ -186,21 +232,19 @@ def main():
                 plt.subplot(1, graph_num, graph_num)
                 plt.xticks([]), plt.yticks([])
                 plt.axis('off')  # 關閉座標刻度
-                plt.title('model pred binary')
-                plt.imshow(mask.to('cpu').detach().squeeze(0).permute(2,1,0))
+                plt.title('GT')
+                plt.imshow(mask.to('cpu').detach().squeeze(0).permute(1,2,0))
 
             if not save:
                 plt.show()
             else:
                 plt.savefig(save_path)
-        if i == 1:
-            break
-    print('test_avg_f1:{:4f}'.format(f1_final/(i+1)),',','test_avg_iou:{:4f}'.format(iou_final/(i+1)))
+        # if i == 1:
+        #     break
 
-
-
-
+    # print('test_avg_f1:{:4f}'.format(f1_final/(i+1)),',', 'test_avg_iou:{:4f}'.format(iou_final/(i+1)))
+    print('test_avg_f1',f1_final/(i+1),',', 'test_avg_iou:', iou_final/(i+1))
+    print('avg inferance time:', infer_time/(i+1),)
 
 if __name__ == '__main__':
     main()
-

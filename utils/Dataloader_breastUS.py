@@ -4,7 +4,7 @@ import torch
 
 from skimage import io, color
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from torchvision import transforms as T
 from torchvision.transforms import functional as F
 from torchvision import transforms
@@ -15,9 +15,7 @@ import os
 import cv2
 import pandas as pd
 
-from numbers import Number
 from typing import Container
-from collections import defaultdict
 import argparse
 
 
@@ -131,10 +129,11 @@ class ImageToImage2D(Dataset):
     """
 
     def __init__(self, dataset_path: str, joint_transform: Callable = None, one_hot_mask: int = False,
-                 merge_train:bool=True, img_size=(256,256)) -> None:
+                 merge_train:bool=True, img_size=(256,256), get_catagory=None, only_positive=True) -> None:
         '''
         path example:"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new"
-
+        catagory: 是否使用類別
+        only_positive: 只使用有腫瘤的影像訓練
         '''
         # 如果是merge_train直接輸入包含benign和malignant的路徑。EX：folder：normal_new,malignant_new,benign_new
         # 訓練資料包含benign,malignant,normal，normal的mask全部都是0(代表無病灶標記)。
@@ -142,17 +141,27 @@ class ImageToImage2D(Dataset):
         self.img_size = img_size
         self.dataset_path = dataset_path
         self.one_hot_mask = one_hot_mask
+        self.get_catagory = get_catagory
+        self.img_catagory = None
         if joint_transform:
             self.joint_transform = joint_transform
         else:
             to_tensor = T.ToTensor()
             self.joint_transform = lambda x, y: (to_tensor(x), to_tensor(y))
         if merge_train:
+            # Normal, Malignant, Benign全部一起訓練
             # benign_ls = os.listdir(os.path.join(self.input_path_benign))
             # malignant_ls = os.listdir(self.input_path_malignant)
             self.images_list, self.masks_list = [],[]
             for catagory in os.listdir(self.dataset_path):
                 # 如果需要縮小範圍到只有benign,malignant，再for迴圈後加上if catagory in {benign_new,malignant_new}
+                if catagory in {'benign_new', 'malignant_new'}:
+                    self.img_catagory = 1
+                    # continue
+                else:
+                    if only_positive:
+                        continue
+                    self.img_catagory = 0
                 catagory_path = os.path.join(self.dataset_path, catagory)
                 for folder in os.listdir(catagory_path):
                     if folder == 'images':
@@ -197,7 +206,7 @@ class ImageToImage2D(Dataset):
             # 原來一直都有呼叫這個函式但是我不知道= =，目前沒被賦予功能。
             image, mask = self.joint_transform(image, mask)
 
-        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy()
+        image, mask = image.permute(1,2,0).numpy(), mask.permute(1,2,0).numpy()
 
         image = cv2.resize(image, self.img_size)
         mask = cv2.resize(mask, self.img_size)
@@ -211,6 +220,8 @@ class ImageToImage2D(Dataset):
         # 如果用Dataloader讀取，回傳格式為torch.tenser()，維度是(B,C,H,W)。
 
         # print('BreastUS資料集輸出影像尺寸：', image.shape, mask.shape, sep='\n')
+        if self.get_catagory is not None:
+            return image, mask, self.img_catagory
         return image, mask
 
 
@@ -256,7 +267,7 @@ class Image2D(DataLoader):
         mask[mask > 127] = 1
         # print('BUS驗證資料集的尺寸：', image.shape, mask.shape, sep='\n')
         # 回傳沒有經過資料增量的影像+原圖尺寸(tuple)
-        return image, mask, original_size
+        return image, mask
 
 
 def chk_mkdir(*paths: Container) -> None:
@@ -271,44 +282,8 @@ def chk_mkdir(*paths: Container) -> None:
             os.makedirs(path)
 
 
-class Logger:
-    def __init__(self, verbose=False):
-        self.logs = defaultdict(list)
-        self.verbose = verbose
-
-    def log(self, logs):
-        for key, value in logs.items():
-            self.logs[key].append(value)
-
-        if self.verbose:
-            print(logs)
-
-    def get_logs(self):
-        return self.logs
-
-    def to_csv(self, path):
-        pd.DataFrame(self.logs).to_csv(path, index=None)
 
 
-class MetricList:
-    def __init__(self, metrics):
-        assert isinstance(metrics, dict), '\'metrics\' must be a dictionary of callables'
-        self.metrics = metrics
-        self.results = {key: 0.0 for key in self.metrics.keys()}
-
-    def __call__(self, y_out, y_batch):
-        for key, value in self.metrics.items():
-            self.results[key] += value(y_out, y_batch)
-
-    def reset(self):
-        self.results = {key: 0.0 for key in self.metrics.keys()}
-
-    def get_results(self, normalize=False):
-        assert isinstance(normalize, bool) or isinstance(normalize, Number), '\'normalize\' must be boolean or a number'
-        if not normalize:
-            return self.results
-        else:
-            return {key: value / normalize for key, value in self.results.items()}
 
 if __name__ == '__main__':
 
@@ -322,12 +297,14 @@ if __name__ == '__main__':
     dataset_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_dataset"
     dataset_path_train = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
     save_path = r'./model/Model_Result/'
-    train_tf = JointTransform2D(crop=(32,32), color_jitter_params=None)
-    dataset = DataLoader(ImageToImage2D(dataset_path_train,joint_transform=train_tf))
-    for i, (image, mask) in enumerate(dataset):
-        if i == 2:
+    # train_tf = JointTransform2D(crop=(32,32), color_jitter_params=None)
+    # dataset = DataLoader(ImageToImage2D(dataset_path_train,joint_transform=train_tf))
+    dataset = DataLoader(ImageToImage2D(dataset_path_train, get_catagory=True))
+    for i, (image, mask, catagory) in enumerate(dataset):
+        if i == 1:
             break
         # print(image.shape, mask.shape, sep='\n')
+        print(f'catagory is: {catagory}')
         if image.ndim or mask.ndim == 4:
             image, mask = image.squeeze(0), mask.squeeze(0)# 去掉batch維度
-            print(image, mask, sep='\n')
+            print(image.shape, mask.shape, sep='\n')

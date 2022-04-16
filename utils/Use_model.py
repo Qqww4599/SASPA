@@ -13,9 +13,6 @@ def Use_model(args):
     Model參數設置
     '''
     model_name = str(args.modelname)
-    if model_name == 'VisionTransformer':
-        from .zoo.vision_transformer import VisionTransformer
-        model = VisionTransformer()  # 測試asyml的vision transformer code
 
     if model_name == 'medt':
         from .zoo.MedT.lib.models.axialnet import MedT
@@ -37,13 +34,30 @@ def Use_model(args):
         model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=args.imgsize ** 2)
         # model.reset_classifier()
     if model_name == 'unet_resnet34':
-        model = smp.Unet(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=2)
+        model = smp.Unet(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+    if model_name == 'unet++_resnet18':
+        model = smp.UnetPlusPlus(encoder_name='resnet18', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
     if model_name == 'unet++_resnet34':
-        model = smp.UnetPlusPlus(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=2)
+        model = smp.UnetPlusPlus(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+    if model_name == 'unet++_resnet50':
+        model = smp.UnetPlusPlus(encoder_name='resnet50', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+    if model_name == 'unet++_resnet101':
+        model = smp.UnetPlusPlus(encoder_name='resnet101', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
     if model_name == 'medt_retrofit':
-        from .zoo.medt_retrofit import medt_retrofit_model
-        model = medt_retrofit_model(args)
-
+        from .zoo.medt_retrofit import medt_retrofit_model_use
+        model = medt_retrofit_model_use(args)
+    if model_name == 'pranet':
+        from .zoo.reverse_attn_Unet import Reverse_attn_unet
+        model = Reverse_attn_unet()
+    if model_name == 'multi_loss':
+        from .zoo.Test_models.multi_loss_return_medt.multi_loss_return_medt import medt_retrofit_model_use
+        model = medt_retrofit_model_use(args)
+    if model_name == 'without_attn':
+        from .zoo.Test_models.medt_global_wo_attn.medt_global_wo_attn import medt_retrofit_model_use
+        model = medt_retrofit_model_use(args)
+    if model_name == 'TEST':
+        from .zoo.Test_models.Swin_like20220406._20220406 import medt
+        model = medt(args)
 
 
     model.to(args.device)

@@ -8,7 +8,6 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import argparse
-from utils.zoo.vision_transformer import VisionTransformer
 import warnings
 import pdb
 '''
@@ -57,9 +56,17 @@ def THRESH_BINARY_for_pred(x, th):
     if torch.is_tensor(x):
         # print('Input shape：', x.shape)
         x = x.numpy()
+    x = x*255
+    x = x.astype(np.uint8)
     # print('Input shape：', x.shape) # Input shape： (512, 512)
     # print('Input：', x)
-    ret, th = cv2.threshold(x * 255, th, 255, cv2.THRESH_BINARY_INV)
+    # ret, th = cv2.threshold(x * 255, th, 255, cv2.THRESH_BINARY_INV)
+
+    # 用全局自適應(Otsu’s二值化)
+    ret, th = cv2.threshold(x[:,:,-1], th, 255, cv2.THRESH_OTSU)
+
+    if th.ndim == 2:
+        th = np.expand_dims(th, axis=2)
     return th
 
 # 不能隨便resize圖片會跑掉
@@ -104,7 +111,7 @@ def read_image(path):
 #
 #     plt.show()
 
-def Save_image(*image,save_path,original_size, channel=2, th=30):
+def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     '''
     input：預期傳入圖片為3張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片+GT,格式為torch.tensor
     input size to be (B,C,H,W)
@@ -122,7 +129,6 @@ def Save_image(*image,save_path,original_size, channel=2, th=30):
     # print('original_image.shape',original_image.shape) # torch.Size([1, 3, 256, 256])
     # print('mask',mask.shape) # mask:torch.Size([1, 1, 256, 256])
     # print('pred',pred.shape) # pred:torch.Size([1, 3, 256, 256])
-    # 有時plt吃CHW有時候吃HWC?????
     if pred.ndim == 4:
         pred = pred.squeeze(0) # 去掉batch維度
     if mask.ndim == 4:
@@ -134,15 +140,19 @@ def Save_image(*image,save_path,original_size, channel=2, th=30):
     original_image = original_image.permute(1,2,0)
     # print(pred) # H,W,C
 
-    # resize to original size
-    original_image = cv2.resize(original_image.numpy(),original_size,interpolation=cv2.INTER_NEAREST)
-    pred = cv2.resize(pred.numpy(),original_size,interpolation=cv2.INTER_NEAREST)
-    pred_binary = cv2.resize(pred_binary,original_size,interpolation=cv2.INTER_NEAREST).transpose(2,0,1)
-    mask = cv2.resize(mask, original_size, interpolation=cv2.INTER_NEAREST)
-    # print(pred.shape) # H,W,C
-    # pdb.set_trace()
+    # ---- to torch tensor to numpy array ----
+    original_image = original_image.numpy()
+    pred = pred.numpy()
+    pred_binary = pred_binary.transpose(2,0,1)
+    # ---- resize to original size ----
+    if resize:
+        original_image = cv2.resize(original_image,original_size,interpolation=cv2.INTER_NEAREST)
+        pred = cv2.resize(pred,original_size,interpolation=cv2.INTER_NEAREST)
+        pred_binary = cv2.resize(pred_binary,original_size,interpolation=cv2.INTER_NEAREST)
+        mask = cv2.resize(mask, original_size, interpolation=cv2.INTER_NEAREST)
+        # print(pred.shape) # H,W,C
     if channel == 2:
-        pred = pred[:,:,1] # 取單一通道，取第二個通道效果比較好
+        pred = pred[:,:,1]
     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
     plt.subplot(2, 2, 1)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
@@ -189,20 +199,15 @@ if __name__ == '__main__':
 
     model_path = arg.model_path
 
-    test: str = input('輸入是否為外來影像(y/n)')
-    if test == 'y':
-        dataset_path = r'./(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
-        img_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_1.bmp'
-        img_path2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_2.bmp'
+    dataset_path = r'./(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
+    img_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_1.bmp'
+    img_path2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_2.bmp'
 
-        # 測試影像的絕對路徑
-        img_path1_n = r'D:\Programming\AI&ML\(Dataset)Gland Segmentation in Colon Histology Images Challenge\dataset\images\testA_1.bmp'
-        img_path2_n = r'D:\Programming\AI&ML\(Dataset)Gland Segmentation in Colon Histology Images Challenge\dataset\masks\testA_1.bmp'
-        # print(img_path,img_path2,sep='\n')
-    else:
-        sys.exit()
+    # 測試影像的絕對路徑
+    img_path1_n = r'D:\Programming\AI&ML\(Dataset)Gland Segmentation in Colon Histology Images Challenge\dataset\images\testA_1.bmp'
+    img_path2_n = r'D:\Programming\AI&ML\(Dataset)Gland Segmentation in Colon Histology Images Challenge\dataset\masks\testA_1.bmp'
+    # print(img_path,img_path2,sep='\n')
 
-    pre_process, post_process = read_image(img_path).numpy(), read_image(img_path2).numpy()
     pre_process, post_process = read_image(img_path1_n), read_image(img_path2_n)
     # Show_image(pre_process, post_process) # 模組化調度使用
 

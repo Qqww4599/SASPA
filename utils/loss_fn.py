@@ -107,6 +107,8 @@ def weight_cross_entropy(output, target, wce_beta):
         result = (result <= t_max).float() * result + (result > t_max).float() * t_max
         return result
 
+    assert output.shape[1] == 1
+    assert target.shape[1] == 1
     output = clip_by_tensor(output, 1e-07, 1 - 1e-07)
     output = torch.log(output / (1 - output))
 
@@ -125,19 +127,25 @@ def weight_cross_entropy(output, target, wce_beta):
     return loss
 
 class LogNLLLoss(_WeightedLoss):
-    '''來自MedT metrics.py'''
+    '''
+    來自MedT metrics.py
+    此loss function限定使用輸出2 class，不然會跳出CUDA error
+    '''
     __constants__ = ['weight', 'reduction', 'ignore_index']
 
     def __init__(self, weight=None, size_average=None, reduce=None, reduction=None,
                  ignore_index=-100):
         super(LogNLLLoss, self).__init__(weight, size_average, reduce, reduction)
         self.ignore_index = ignore_index
+        self.nll = nn.NLLLoss()
 
     # 預設y_input=(b,c,h,w),y_target=(b,1,h,w)，計算方式為攤平後再CE
     def forward(self, y_input, y_target):
+
         # y_input = torch.log(y_input + EPSILON)
         y_input = y_input.flatten(2)  # 新增
         y_target = y_target.flatten(2).squeeze(1) # 新增
+        return self.nll(y_input, y_target.long())
         return cross_entropy(y_input, y_target.long(), weight=self.weight,
                              ignore_index=self.ignore_index)
     # def forward(self, y_input, y_target):
@@ -147,26 +155,24 @@ class LogNLLLoss(_WeightedLoss):
     #     return cross_entropy(y_input, y_target.long(), weight=self.weight,
     #                          ignore_index=self.ignore_index)
 
-def IoU(y_pred ,y_true,  eps=1e-32):
+def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
     '''IoU
     y_pred:(b,2,h,w)
     y_true:(b,1,h,w)
     '''
-    return 0
     # assert y_true.shape == (args.batchsize, 1, args.imgsize, args.imgsize)
     # assert y_pred.shape == (args.batchsize, 2, args.imgsize, args.imgsize)
-    # y_pred = scaling(y_pred)
-    # y_pred = (y_pred != 0).float()
-    # y_pred = Binarization(scaling(y_pred), th=100) # 歸一化+二值化
-    # y_pred = scaling(y_pred)
-    # y_pred = y_pred.flatten(3)
+
+    # --- 歸一化+二值化 ---
+    y_pred = scaling(y_pred)
+    y_pred = (y_pred>threshold).int()
+
     intersection = y_pred * y_true
-    # pdb.set_trace()
     union = y_pred + y_true - intersection
     intersection = intersection.sum(dim=(0,2,3)) # (b,c*h*w), clip by channels, expect shape :[c nums]
-    # pdb.set_trace()
     union = union.sum(dim=(0,2,3)) # (b,c*h*w), clip by channels, expect shape :[c nums]
     output = (intersection + eps) / (union + eps)
+    output = torch.max(output)
     return output
 
 def classwise_iou(output, gt):
@@ -194,25 +200,34 @@ def classwise_iou(output, gt):
 
     return iou_loss
 
-def classwise_f1(output, gt):
+def classwise_f1(output, gt, threshold=0.333):
     """
     來自MedT metrics.py
     Args:
         output: torch.Tensor of shape (n_batch, n_classes, image.shape)
         gt: torch.LongTensor of shape (n_batch, image.shape)
     """
+    # --- 歸一化+二值化 ---
+    output = scaling(output)
+        # 設定閥值
+    output = (output > threshold).int()
 
-    epsilon = 1e-20
+    epsilon = 1e-8
     n_classes = output.shape[1]
-
-    output = torch.argmax(output, dim=1)
-    true_positives = torch.tensor([((output == i) * (gt == i)).sum() for i in range(n_classes)]).float()
-    selected = torch.tensor([(output == i).sum() for i in range(n_classes)]).float()
-    relevant = torch.tensor([(gt == i).sum() for i in range(n_classes)]).float()
+    # pdb.set_trace()
+    # ---- modified f1 ----
+    # -- if want source code
+    # to github https://github.com/jeya-maria-jose/Medical-Transformer/blob/main/lib/metrics.py ---
+    # output = torch.argmax(output, dim=1)
+    true_positives = torch.tensor([((output == i+1) * (gt == i+1)).sum() for i in range(n_classes)]).float()
+    selected = torch.tensor([(output == i+1).sum() for i in range(n_classes)]).float()
+    relevant = torch.tensor([(gt == i+1).sum() for i in range(n_classes)]).float()
 
     precision = (true_positives + epsilon) / (selected + epsilon)
     recall = (true_positives + epsilon) / (relevant + epsilon)
     classwise_f1 = 2 * (precision * recall) / (precision + recall)
+    # print(f'true_positives:{true_positives}',f'selected:{selected}',
+    #       f'precision:{precision}',f'recall:{recall}')
     if not len(classwise_f1) == 1:
         classwise_f1 = classwise_f1.sum() / len(classwise_f1)
 
@@ -228,14 +243,14 @@ def binary_cross_entropy(x, target):
 
 
     # x = (torch.Size([1, 2, 256, 256])
-    *i,h,w = target.shape
-    x = x.squeeze(0)
-    target = target.resize(h,w) # (torch.Size([1, 256, 256]) to (256,256)
-    output = 0
-    for i in x:
-        x = x.float()
-        output = F.binary_cross_entropy_with_logits(i, target.float())
-        # output = output / x[0,1]
+    b,c,h,w = target.shape
+    x = x[:,-1,:,:].squeeze(0)
+    if x.shape == (h,w):
+        x = x.unsqueeze(0)
+    target = target.reshape(b,h,w) # (torch.Size([1, 256, 256]) to (256,256)
+    x = x.float()
+    output = F.binary_cross_entropy_with_logits(x, target.float())
+    # output = output / x[0,1]
     return output
 
 
@@ -265,6 +280,10 @@ if __name__ == '__main__':
     # us_dataset_mask1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\masks\benign (1).png"
     us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
     test_ds = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
+
+    a = torch.randn((16,1,4,4), requires_grad=True).float()
+    a = nn.Sigmoid()(a)
+    b = torch.randint(0,2,(16,1,4,4)).float()
 
     # assign parameters
     parser = argparse.ArgumentParser(description='Testers')
@@ -298,13 +317,19 @@ if __name__ == '__main__':
         # pdb.set_trace()
         # assert x.shape == (1,2,256,256), f'模型輸出格式與loss輸入格式不符合，輸入格式為{x.shape},應為(1,2,256,256)'
         # o = weight_cross_entropy(x, mask, wce_beta=1e-07)
-        o = LogNLLLoss()(out, mask.cuda())
+        nll = LogNLLLoss()(out, mask.cuda())
         iou = classwise_iou(out_iou,mask.cuda())
-        f1_s = classwise_f1(out,mask.cuda()) # 這邊有用
         iou_test = IoU(out_iou,mask.cuda())
-        print('f1:',f1_s, 'IoU:',iou, 'iou_myself:',iou_test)
 
-        # sys.exit()
+        print('LogNLLLoss:', nll)
+        sys.exit()
+
+        f1_s = classwise_f1(out,mask.cuda())
+        print('classwise_f1:', f1_s)
+        wce = weight_cross_entropy(oriout, mask.cuda(), 1e-8)
+
+
+
         out = out.permute(0,3,2,1).to('cpu').detach().numpy()
         oriout = oriout.permute(0,3,2,1).to('cpu').detach().numpy()
         out_iou = out_iou.permute(0,3,2,1).to('cpu').detach().numpy()
@@ -338,5 +363,3 @@ if __name__ == '__main__':
 
         if i == 0:
             break
-
-
