@@ -49,14 +49,18 @@ def Use_model(args):
     if model_name == 'pranet':
         from .zoo.reverse_attn_Unet import Reverse_attn_unet
         model = Reverse_attn_unet()
+
+    # 2022/3/16, 2022/3/17測試使用之model
     if model_name == 'multi_loss':
         from .zoo.Test_models.multi_loss_return_medt.multi_loss_return_medt import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)
     if model_name == 'without_attn':
         from .zoo.Test_models.medt_global_wo_attn.medt_global_wo_attn import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)
+
+    # 測試新model使用
     if model_name == 'TEST':
-        from .zoo.Test_models.Swin_like20220406._20220406 import medt
+        from .zoo.Test_models.global_branch_ver1_1.model import medt
         model = medt(args)
 
 

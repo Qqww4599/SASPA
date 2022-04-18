@@ -9,6 +9,43 @@ import matplotlib.pyplot as plt
 from torch.nn.functional import cross_entropy
 from torch.nn.modules.loss import _WeightedLoss # 用於LogNLLLoss
 
+'''
+loss_fn ver1.0
+
+此loss script作為loss函數選擇使用。預設傳入之特徵(torch.tensor)大小: B,classes,H,W
+Focalloss:
+dice_coef_loss:
+weight_cross_entropy(wce):
+LogNLLLoss(lll):
+IoU:
+Classwise IoU:
+classwise_f1:
+binary_cross_entropy(bce):
+
+
+更新紀錄:
+    ver1.0
+        pass
+
+
+
+
+'''
+
+def Binarization(x, th):
+    x = x*255
+    x[x>=th] = 1
+    x[x<th] = 0
+    return x
+
+def scaling(x):
+    max = x.max()
+    min = x.min()
+    dist = max-min
+    if dist == 0:
+        return x
+    return (x - min) / dist
+
 class FocalLoss(torch.nn.Module):
     def __init__(self, gamma=0, alpha=None, size_average=True):
         super(FocalLoss, self).__init__()
@@ -46,20 +83,6 @@ class FocalLoss(torch.nn.Module):
             return loss.mean()
         else:
             return loss.sum()
-
-def Binarization(x, th):
-    x = x*255
-    x[x>=th] = 1
-    x[x<th] = 0
-    return x
-
-def scaling(x):
-    max = x.max()
-    min = x.min()
-    dist = max-min
-    if dist == 0:
-        return x
-    return (x - min) / dist
 
 def sigmoid_scaling(x):
     x = torch.sigmoid(x) # 用torch內建方法
@@ -107,7 +130,7 @@ def weight_cross_entropy(output, target, wce_beta):
         result = (result <= t_max).float() * result + (result > t_max).float() * t_max
         return result
 
-    assert output.shape[1] == 1
+    # assert output.shape[1] == 1
     assert target.shape[1] == 1
     output = clip_by_tensor(output, 1e-07, 1 - 1e-07)
     output = torch.log(output / (1 - output))
@@ -272,21 +295,14 @@ if __name__ == '__main__':
     import torch
     import segmentation_models_pytorch as smp
     import sys
-    # dataset_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
-    # mask1 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_27.bmp'
-    # mask2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/masks/testA_28.bmp'
-    # #
-    # us_dataset_image1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\images\benign (1).png"
-    # us_dataset_mask1 = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new\masks\benign (1).png"
-    us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
-    test_ds = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
 
-    a = torch.randn((16,1,4,4), requires_grad=True).float()
-    a = nn.Sigmoid()(a)
-    b = torch.randint(0,2,(16,1,4,4)).float()
+
 
     # assign parameters
     parser = argparse.ArgumentParser(description='Testers')
+    us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
+    test_ds = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
+
     parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
     parser.add_argument('-ic', '--imgchan', type=int, default=2, help='訓練影像通道數')
     parser.add_argument('-b', '--batchsize', type=int, default=1, help='batchsize')
@@ -309,24 +325,27 @@ if __name__ == '__main__':
     for i, (image, mask) in enumerate(DL):
         oriout = out = model(image.cuda())
 
+        print(f'輸入影像大小:{image.shape}')
         assert image.shape == (args.batchsize, 3, args.imgsize, args.imgsize), f'correct:{image.shape},'# confirm input format
         assert mask.shape == (args.batchsize, 1, args.imgsize, args.imgsize), f'correct:{mask.shape},' # confirm input format
+
+
         out = sigmoid_scaling(out) # 使用sigmoid歸一化
         out_iou = (out > 0.333).float() # 影像二值化
         # out_iou = out
         # pdb.set_trace()
         # assert x.shape == (1,2,256,256), f'模型輸出格式與loss輸入格式不符合，輸入格式為{x.shape},應為(1,2,256,256)'
         # o = weight_cross_entropy(x, mask, wce_beta=1e-07)
-        nll = LogNLLLoss()(out, mask.cuda())
-        iou = classwise_iou(out_iou,mask.cuda())
         iou_test = IoU(out_iou,mask.cuda())
-
-        print('LogNLLLoss:', nll)
-        sys.exit()
-
-        f1_s = classwise_f1(out,mask.cuda())
-        print('classwise_f1:', f1_s)
+        iou = classwise_iou(out_iou,mask.cuda())
+        nll = LogNLLLoss()(out, mask.cuda())
+        f1_s = classwise_f1(out, mask.cuda())
         wce = weight_cross_entropy(oriout, mask.cuda(), 1e-8)
+
+        print('IoU: {:2f}'.format(iou_test))
+        print('classwise_iou: {:2f}'.format(iou))
+        print('LogNLLLoss:', nll)
+        print('classwise_f1:', f1_s)
 
 
 
@@ -361,5 +380,5 @@ if __name__ == '__main__':
 
         plt.show()
 
-        if i == 0:
+        if i == 2:
             break

@@ -206,7 +206,7 @@ class ImageToImage2D(Dataset):
             # 原來一直都有呼叫這個函式但是我不知道= =，目前沒被賦予功能。
             image, mask = self.joint_transform(image, mask)
 
-        image, mask = image.permute(1,2,0).numpy(), mask.permute(1,2,0).numpy()
+        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy()
 
         image = cv2.resize(image, self.img_size)
         mask = cv2.resize(mask, self.img_size)
