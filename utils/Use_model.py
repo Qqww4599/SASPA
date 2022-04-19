@@ -34,15 +34,15 @@ def Use_model(args):
         model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=args.imgsize ** 2)
         # model.reset_classifier()
     if model_name == 'unet_resnet34':
-        model = smp.Unet(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+        model = smp.Unet(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=args.classes)
     if model_name == 'unet++_resnet18':
-        model = smp.UnetPlusPlus(encoder_name='resnet18', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+        model = smp.UnetPlusPlus(encoder_name='resnet18', encoder_weights='imagenet', in_channels=3, classes=args.classes)
     if model_name == 'unet++_resnet34':
-        model = smp.UnetPlusPlus(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+        model = smp.UnetPlusPlus(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=args.classes)
     if model_name == 'unet++_resnet50':
-        model = smp.UnetPlusPlus(encoder_name='resnet50', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+        model = smp.UnetPlusPlus(encoder_name='resnet50', encoder_weights='imagenet', in_channels=3, classes=args.classes)
     if model_name == 'unet++_resnet101':
-        model = smp.UnetPlusPlus(encoder_name='resnet101', encoder_weights='imagenet', in_channels=3, classes=args.imgchan)
+        model = smp.UnetPlusPlus(encoder_name='resnet101', encoder_weights='imagenet', in_channels=3, classes=args.classes)
     if model_name == 'medt_retrofit':
         from .zoo.medt_retrofit import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)

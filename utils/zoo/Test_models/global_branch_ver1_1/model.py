@@ -38,6 +38,9 @@ global branch ver 1.1
         20220418
         使用triplet attention作為注意力架構。
         將圖片以輸入影像之原大小、1/2大小進行學習。
+    ver1.1.1:
+        20220419
+        在global branch中加入deep supervise。目前寫法不好維護，日後要修改。
 
 
 
@@ -56,7 +59,7 @@ class conv1x1(nn.Module):
 class medical_transformer(nn.Module):
     def __init__(self, block, block2, layers, num_classes, groups, width_per_group,
                  relpace_stride_with_dilation=None, norm_layer=None, s=0.125, img_size=256,
-                 img_chan=3):
+                 img_chan=3, deep_sup=False):
         '''
         主功能沒有改變的MedT。
         Attributes:
@@ -86,6 +89,7 @@ class medical_transformer(nn.Module):
         self.img_size = img_size
         self.img_chan = img_chan
         self.groups = groups
+        self.deep_sup = deep_sup
         self.base_width = width_per_group
 
         # ----- 參數定義完成，接下來進行模型定義 -----
@@ -143,7 +147,7 @@ class medical_transformer(nn.Module):
         self.swin_block = swin.SwinTransformerBlock(dim=64, input_resolution=(self.img_size//4, self.img_size//4),
                                                     num_heads=4, window_size=self.img_size//4)
         self.init_conv = nn.Conv2d(16*3, 3, 1, bias=False) # 測試local部分加速運算
-        self.global_branch = global_branch(8, 16, deep_sup=False)
+        self.global_branch = global_branch(8, 16, deep_sup=deep_sup)
 
 
     def _BCHW_to_BNC(self, x, inplanes, size ,reverse=False):
@@ -191,7 +195,11 @@ class medical_transformer(nn.Module):
         x = self.relu(x)
 
         # --- 全局注意力層開始 ---
-        x = self.global_branch(x)
+        if self.deep_sup:
+            x, *f = self.global_branch(x)
+        else:
+            x = self.global_branch(x)
+        # sys.exit()
         # x1 = checkpoint(self.layer1, x)
         # x2 = checkpoint(self.layer2, x1) # 1, 64, 64, 64
         #
@@ -215,7 +223,10 @@ class medical_transformer(nn.Module):
         x = torch.add(x, x_loc)
         x = F.relu(self.decoder_f(x)) # 最終進行一次conv學習
         x = self.adjust(x)
-        return x
+        if self.deep_sup:
+            return x, *f
+        else:
+            return x
 
 
     def _make_layer(self, block, planes, blocks, kernel_size=56, stride=1, dilate=False):
@@ -349,8 +360,12 @@ class medical_transformer(nn.Module):
 
         return x_p
     def forward(self, x):
-        output = self._forward_impl(x)
-        return output
+        if self.deep_sup:
+            output, *f = self._forward_impl(x)
+            return output, *f
+        else:
+            output = self._forward_impl(x)
+            return output
 
 def medt(args):
     '重新編排+標註後的medt'
@@ -362,7 +377,8 @@ def medt(args):
                                 img_size=args.imgsize,
                                 img_chan=args.imgchan,
                                 groups=8,
-                                width_per_group=64,)
+                                width_per_group=64,
+                                deep_sup=args.deep_supervise)
     return model
 
 

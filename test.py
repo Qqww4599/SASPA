@@ -55,7 +55,7 @@ def args_parser(config):
     parser.add_argument('--mode', type=bool, help='是否只載入權重，默認載入權重')
     parser.add_argument('--save_path', type=str, default=save_path, help='圖片儲存位置')
     parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
-    parser.add_argument('-ic', '--imgchan', type=int, default=2, help='model輸出影像通道數(grayscale)')
+    parser.add_argument('-ic', '--classes', type=int, default=1, help='model輸出影像通道數(grayscale)')
     parser.add_argument('--device', default='cuda', help='是否使用GPU訓練')
     parser.add_argument('--save_result', default=True, type=bool, help='是否save影像')
     # mask傳入設定
@@ -137,7 +137,7 @@ def calculate(model_out, mask):
     return f1_s.cpu().detach().numpy().astype(float), iou.cpu().detach().numpy()
 
 def adaptiveThreshold(img):
-    img = img[:,:,1].numpy() * 255
+    img = img[:,:,-1].numpy() * 255
     img = img.astype(np.uint8)
     assert type(img)==np.ndarray, f'{type(img)}'
     img = cv2.medianBlur(img,5)
@@ -147,17 +147,21 @@ def adaptiveThreshold(img):
     return th1,th2
 
 def main():
+
+    sys.path.append(r'D:\Programming\AI&ML\model\train_ver2.py')
+    from train_ver2 import eval
+
     args = args_parser(config)
     dataloader = test_dataloader(args.test_dataset_path, args=args)
     dataloader = DataLoader(dataloader)
 
-    save = False # 顯示圖片或儲存圖片
+    save = True # 顯示圖片或儲存圖片
     # 載入模型
     model = Use_model(args)
     model.load_state_dict(torch.load(args.model_path)) # 載入權重
-    model.eval()
     ds_mask = args.ds_mask
     binarization_th = args.binarization_th / 255.
+
     f1_final, iou_final = 0., 0.
 
     infer_time = 0
@@ -167,7 +171,7 @@ def main():
         graph_num = 2
         # print(args.scale, args.binarization, args.binarization_th)
         time_start = time.time()
-        pred, _ = model(image.cuda())
+        pred = model(image.cuda())
         infer_time += time.time() - time_start
         if args.scale:
             pred = sigmoid_scaling(pred) # 使用sigmoid歸一化
@@ -201,7 +205,7 @@ def main():
             plt.xticks([]), plt.yticks([])  # 關閉座標刻度
             plt.axis('off')
             plt.title('pred')  # 1*3的圖片 的 第1張
-            plt.imshow(pred[:,:,1])
+            plt.imshow(pred[:,:,-1])
 
 
             plt.show()

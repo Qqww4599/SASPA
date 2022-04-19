@@ -55,6 +55,7 @@ def THRESH_BINARY(x, th):
 def THRESH_BINARY_for_pred(x, th):
     if torch.is_tensor(x):
         # print('Input shape：', x.shape)
+        x = torch.sigmoid(x)
         x = x.numpy()
     x = x*255
     x = x.astype(np.uint8)
@@ -63,7 +64,10 @@ def THRESH_BINARY_for_pred(x, th):
     # ret, th = cv2.threshold(x * 255, th, 255, cv2.THRESH_BINARY_INV)
 
     # 用全局自適應(Otsu’s二值化)
-    ret, th = cv2.threshold(x[:,:,-1], th, 255, cv2.THRESH_OTSU)
+    # ret, th = cv2.threshold(x[:,:,-1], th, 255, cv2.THRESH_OTSU)
+    img = x[:, :, -1]
+    img = cv2.medianBlur(img, 5)
+    th = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 255, 2)
 
     if th.ndim == 2:
         th = np.expand_dims(th, axis=2)
@@ -76,40 +80,6 @@ def read_image(path):
     (B,G,R) = cv2.split(x)
     x = torch.tensor(cv2.merge([R,G,B]))
     return x
-
-# def Show_image(*image,):
-#     '''
-#     input：預期傳入圖片為2張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片
-#     格式為torch.tensor
-#     用plt.imshow顯示。
-#     '''
-#     image, mask, *_ = image
-#     # 影像二值化。image1表示原本影像，image2表示mask影像
-#     # image1, image2 = THRESH_BINARY(image1,1), THRESH_BINARY(image2, 1)
-#     # print(image2.shape)
-#     image, mask = image, THRESH_BINARY(mask, 1)
-#     # original = read_image(arg.test_image_input)
-#
-#     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
-#     plt.subplot(1, 3, 1)
-#     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-#     plt.axis('off')
-#     plt.title('original')  # 1*3的圖片 的 第1張
-#     plt.imshow(image)
-#
-#     plt.subplot(1, 3, 2)  # 1*3的圖片 的 第2張
-#     plt.xticks([]), plt.yticks([])
-#     plt.axis('off')  # 關閉座標刻度
-#     plt.title('original\n(will change to model output)')
-#     plt.imshow(mask)
-#
-#     plt.subplot(1, 3, 3)
-#     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-#     plt.axis('off')
-#     plt.title('Ground Truth')  # 1*23的圖片 的 第3張
-#     plt.imshow(mask)
-#
-#     plt.show()
 
 def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     '''
@@ -136,14 +106,14 @@ def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     if original_image.ndim == 4:
         original_image = original_image.squeeze(0) # 去掉batch維度
     pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to H,W,C
-    pred_binary = THRESH_BINARY_for_pred(pred, th=th)
+    pred_binary = pred
     original_image = original_image.permute(1,2,0)
     # print(pred) # H,W,C
 
     # ---- to torch tensor to numpy array ----
     original_image = original_image.numpy()
     pred = pred.numpy()
-    pred_binary = pred_binary.transpose(2,0,1)
+    pred_binary = pred.transpose(2,0,1)
     # ---- resize to original size ----
     if resize:
         original_image = cv2.resize(original_image,original_size,interpolation=cv2.INTER_NEAREST)

@@ -16,6 +16,10 @@ from .triple_attention import TripletAttention
 '''
 Global CNN module
 
+更新紀錄:
+    ver1.1.1:
+        20220419
+        在global branch中加入deep supervise。目前寫法不好維護，日後要修改。
 
 input: b,in_plane, h/2, w/2
 '''
@@ -242,7 +246,6 @@ class global_branch(nn.Module):
         return nn.Sequential(*modules_layer)
 
     def _forward_impl(self, x):
-        features = []
         b, c, h, w = x.shape
         x_l1 = self.L1(x)
         x = self.maxpool(x_l1)
@@ -252,7 +255,7 @@ class global_branch(nn.Module):
 
         x = self.L3(x_l2)
         if self.deep_sup:
-            features.append(x)
+            fea_sup = x.clone()
 
         x = torch.add(x, x_l2)
         x_l4 = self.L4_0(x)
@@ -261,20 +264,19 @@ class global_branch(nn.Module):
         x = torch.add(x_l4, x_l1)
         x = self.L5(x)
 
-        features.append(x)
-        return features
-
-
-
-
-
+        if self.deep_sup:
+            return x, fea_sup
+        return x
 
 
     def forward(self, x):
-        output = self._forward_impl(x)
+
         if self.deep_sup:
-            return output[-1], output[0]
-        return output[-1]
+            output, f = self._forward_impl(x)
+            return output, f
+        else:
+            output= self._forward_impl(x)
+            return output
 
 
 if __name__ == '__main__':
