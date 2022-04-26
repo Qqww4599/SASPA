@@ -19,8 +19,6 @@ from show_img import Save_image
 from utils.remove_readonly import remove_readonly
 
 import argparse
-
-
 import yaml
 
 
@@ -82,9 +80,11 @@ def main(args):
             writer.add_scalar(f'training {args.loss_fn} loss', scalar_value=loss, global_step=i+(args.epoch*fold))
             if i % save_freq == 0:
                 assert save_freq > 1, 'save_freq只能設定大於1。'
+                val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize))
+                final_val_dataset = DataLoader(val_dataset)
                 folder_name = fr'./Model_Result/val_images/fold{fold}_epoch{epoch}'
-                val_loss, f1, iou = eval(val_loader, model, folder_name, binarization=False,
-                                                   scaling=False, save=False)  # must set scaling and binarization
+                val_loss, f1, iou = eval(final_val_dataset, model, folder_name, binarization=False,
+                                                   scaling=True, save=True)  # must set scaling and binarization
                 writer.add_scalar(f'fold_{fold} val_loss', scalar_value=val_loss, global_step=i)
                 writer.add_scalar(f'fold_{fold} f1 score', scalar_value=f1, global_step=i)
                 writer.add_scalar(f'fold_{fold} mIoU score', scalar_value=iou, global_step=i)
@@ -104,6 +104,8 @@ def main(args):
                 if args.savemodel:
                     save_name = f'./Model_Result/model_fold_{fold+1}.pth'
                     save_model_mode(model, save_name)
+                    # 模型初始化
+                    model = Use_model(args)
                 break
     f_val_loss, f_f1, f_iou = f_val_loss/(fold+1), f_f1/(fold+1), f_iou/(fold+1)
     print('f_val_loss:{:8f}, f_f1:{:8f}, f_iou:{:8f}'.format(f_val_loss.item(), f_f1.item(), f_iou.item()))
@@ -217,8 +219,8 @@ def choose_loss_fn(output, target):
         loss = loss_fn.weight_cross_entropy(output, target, wce_beta=args.wce_beta)
     elif args.loss_fn == 'bce':
         # wce 可以接受channel=1的output
-        loss_fn_name = 'wce'
-        loss = loss_fn.binary_cross_entropy(output, target)
+        loss_fn_name = 'bce'
+        loss = loss_fn.binary_cross_entropy(output, target, _2class=bool(args.classes-1))
     elif args.loss_fn == 'dice_coef_loss':
         loss_fn_name = 'dice_coef_loss'
         loss = loss_fn.dice_coef_loss(output, target)
@@ -231,6 +233,9 @@ def choose_loss_fn(output, target):
     elif args.loss_fn == 'lll':
         loss_fn_name = 'lll'
         loss = loss_fn.LogNLLLoss()(output, target)
+    elif args.loss_fn == 'diceloss':
+        loss_fn_name = 'diceloss'
+        loss = loss_fn.dice_loss(output, target)
     elif args.loss_fn == 'clsiou':
         loss_fn_name = 'clsiou'
         loss = loss_fn.classwise_iou(output, target)
@@ -281,6 +286,8 @@ def deep_supervise(*feature, mask):
         default(N,B,C,H,W): ((8,128,32,32),(8,64,64,64))
     mask:
         default(B,1,H,W)
+
+    :return f_loss (scalar)
     '''
     # f_weight = torch.nn.Parameter(torch.randn(len(feature))) #可學習權重
     f_weight = torch.ones(len(feature)) #不可學習權重
@@ -289,12 +296,10 @@ def deep_supervise(*feature, mask):
         b,c,h,w = mask.shape
         f = f.to(args.device) if args.device == 'cuda:0' else f
         f = F.interpolate(f, size=(h,w), mode='bilinear', align_corners=True)
-
         f_loss.append(choose_loss_fn(f, mask))
+
     f_loss = torch.mul(f_weight, torch.tensor(f_loss)).sum()
     return f_loss
-
-
 def parser_args(model_name):
     parser = argparse.ArgumentParser(description='Transformer Test Version')
     ds_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
@@ -346,6 +351,7 @@ def parser_args(model_name):
                         type=int, help='多少iters更新一次權重(可減少顯存負擔)')
     parser.add_argument('--k_fold', type=int, default=args['optimization']['k_fold'], help='使用k_fold訓練')
     parser.add_argument('--deep_supervise', type=bool, default=args['optimization']['deep_supervise'], help='使用深層監督')
+    parser.add_argument('--pos', type=bool, default=args['optimization']['pos'], help='位置編碼')
 
 
     # Optimizer Setting
@@ -355,7 +361,7 @@ def parser_args(model_name):
 
     # Loss function and Loss schedule
     parser.add_argument('-loss', '--loss_fn', type=str, default=args['criterion']['loss'],
-                        choices=['wce', 'dice_coef_loss', 'IoU', 'FocalLoss', 'bce', 'lll', 'clsiou'])
+                        choices=['wce', 'diceloss', 'IoU', 'FocalLoss', 'bce', 'lll', 'clsiou'])
     parser.add_argument('-wce', '--wce_beta', type=float, default=1e-04, help='wce_loss的wce_beta值，如果使用wce_loss時需要設定')
 
     # Save Setting
@@ -377,8 +383,6 @@ def parser_args(model_name):
 if __name__ == '__main__':
     model_name = 'medt'
 
-    # init_training_result_folder()
+    init_training_result_folder()
     args = parser_args(model_name)
     main(args)
-
-bool()

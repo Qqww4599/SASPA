@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import torch
 from torch import nn
 import numpy as np
@@ -104,6 +105,57 @@ def dice_coef_loss(y_true, y_pred):
     # print(out, out.grad, sep='\t')
     return out
 
+def Accuracy(predict, target):
+    '''
+    -------------------Accuracy TEST-------------------
+    :input
+    predict的二值化影像
+    mask
+
+    :return:
+    Accuracy
+    '''
+    classes = torch.max(predict).to(torch.int)
+    acc, dice_c = 0, 0
+    for cls in range(classes):
+        cls = cls+1
+        TP = torch.sum((predict == cls) * (target == cls))
+        FP = torch.sum(predict == cls) - TP
+        FN = torch.sum(target == cls) - TP
+        TN = torch.sum((predict != cls) * (target != cls))
+        precision = TP / (TP+FP)
+        recall = TP / (TP+FN)
+        acc += (TP + TN) / (TP + FP + FN + TN)
+        dice_c += (2 * TP + 1e-16) / (torch.sum(predict == cls) + torch.sum(target == cls) +1e-16)
+    return acc / (classes+1), dice_c / (classes+1)
+
+class DiceLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True):
+        super(DiceLoss, self).__init__()
+
+    def forward(self, inputs, targets, smooth=1e-16):
+        # comment out if your model contains a sigmoid or equivalent activation layer
+        inputs = F.sigmoid(inputs.to(torch.float))
+
+        # flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (inputs * targets).sum()
+        dice = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
+
+        return 1 - dice
+
+def dice_loss(target, predictive, ep=1e-8):
+    '''
+    陳中銘老師推薦的指標
+
+    '''
+    intersection = 2 * torch.sum(predictive * target) + ep
+    union = torch.sum(predictive) + torch.sum(target) + ep
+    loss = 1 - intersection / union
+    return loss
+
 def weight_cross_entropy(output, target, wce_beta):
     '''
 
@@ -163,20 +215,19 @@ class LogNLLLoss(_WeightedLoss):
         self.nll = nn.NLLLoss()
 
     # 預設y_input=(b,c,h,w),y_target=(b,1,h,w)，計算方式為攤平後再CE
-    def forward(self, y_input, y_target):
-
-        # y_input = torch.log(y_input + EPSILON)
-        y_input = y_input.flatten(2)  # 新增
-        y_target = y_target.flatten(2).squeeze(1) # 新增
-        return self.nll(y_input, y_target.long())
-        return cross_entropy(y_input, y_target.long(), weight=self.weight,
-                             ignore_index=self.ignore_index)
     # def forward(self, y_input, y_target):
-    #     if y_target.dim() == 4:
-    #         y_target = y_target.squeeze(0) # target的size需要是(N,H,W), output的channel數量是target的內部值(整數)
-    #     # y_input = torch.log(y_input + np.finfo(np.float32).eps)
+    #
+    #     # y_input = torch.log(y_input + EPSILON)
+    #     y_input = y_input.flatten(2)  # 新增
+    #     y_target = y_target.flatten(2).squeeze(1) # 新增
     #     return cross_entropy(y_input, y_target.long(), weight=self.weight,
     #                          ignore_index=self.ignore_index)
+    def forward(self, y_input, y_target):
+        if y_target.dim() == 4:
+            y_target = y_target.squeeze(1) # target的size需要是(N,H,W), output的channel數量是target的內部值(整數)
+        # y_input = torch.log(y_input + np.finfo(np.float32).eps)
+        return cross_entropy(y_input.float(), y_target.long(), weight=self.weight,
+                             ignore_index=self.ignore_index)
 
 def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
     '''IoU
@@ -188,7 +239,7 @@ def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
 
     # --- 歸一化+二值化 ---
     y_pred = scaling(y_pred)
-    y_pred = (y_pred>threshold).int()
+    # y_pred = (y_pred>threshold).int()
 
     intersection = y_pred * y_true
     union = y_pred + y_true - intersection
@@ -223,21 +274,32 @@ def classwise_iou(output, gt):
 
     return iou_loss
 
-def classwise_f1(output, gt, threshold=0.333):
+def classwise_f1(output, gt, threshold=0.333, testing=False):
     """
     來自MedT metrics.py
     Args:
         output: torch.Tensor of shape (n_batch, n_classes, image.shape)
         gt: torch.LongTensor of shape (n_batch, image.shape)
+
+    測試：
+    f1的輸入影像在此函數中改為channel=1，如果讓channel>1，會讓f1多0.5?
     """
+    n,c,h,w = output.shape
+    # print(f'mask: {gt.shape}') # 1,1,h,w
     # --- 歸一化+二值化 ---
     output = scaling(output)
-        # 設定閥值
-    output = (output > threshold).int()
+    # 設定閥值，test時設定？
+    if testing and c == 1:
+        # output = (output > threshold).int()
+        n_classes = output.shape[1]
+    if c == 1:
+        n_classes = output.shape[1]
+    if c > 1:
+        n_classes = output.shape[1]-1 # 2 - 1
+
 
     epsilon = 1e-8
-    n_classes = output.shape[1]
-    # pdb.set_trace()
+    # output = torch.argmax(output, dim=1) # 1,H,W
     # ---- modified f1 ----
     # -- if want source code
     # to github https://github.com/jeya-maria-jose/Medical-Transformer/blob/main/lib/metrics.py ---
@@ -246,6 +308,7 @@ def classwise_f1(output, gt, threshold=0.333):
     selected = torch.tensor([(output == i+1).sum() for i in range(n_classes)]).float()
     relevant = torch.tensor([(gt == i+1).sum() for i in range(n_classes)]).float()
 
+    # pdb.set_trace()
     precision = (true_positives + epsilon) / (selected + epsilon)
     recall = (true_positives + epsilon) / (relevant + epsilon)
     classwise_f1 = 2 * (precision * recall) / (precision + recall)
@@ -253,27 +316,35 @@ def classwise_f1(output, gt, threshold=0.333):
     #       f'precision:{precision}',f'recall:{recall}')
     if not len(classwise_f1) == 1:
         classwise_f1 = classwise_f1.sum() / len(classwise_f1)
-
     return classwise_f1
 
-def binary_cross_entropy(x, target):
+def binary_cross_entropy(x, target, _2class=False):
     '''
     input :
         x: tensor.shape:(1,2,h,w)
         y: tensor.shape:(1,1,h,w)
 
+    :parameter
+    _2class: 是否使用分層mask輸出(目標層、背景層)。mask.shape=(b,2,h,w)
     '''
-
-
-    # x = (torch.Size([1, 2, 256, 256])
+    def f_2class(mask, dim=1):
+        '''
+        return
+            mask背景層 = mask[:,1,:,:]
+            mask病灶層 = mask[:,0,:,:]
+            mask.shape = (b,2,h,w)
+            background is last channel!!!!!!!!
+        '''
+        bg_mask = torch.as_tensor((mask) == 0, dtype=torch.int32)
+        mask = torch.cat((mask, bg_mask), dim=dim)
+        return mask
     b,c,h,w = target.shape
-    x = x[:,-1,:,:].squeeze(0)
-    if x.shape == (h,w):
-        x = x.unsqueeze(0)
-    target = target.reshape(b,h,w) # (torch.Size([1, 256, 256]) to (256,256)
+    x = x # b,c,h,w
+    target = target.reshape(b,c,h,w)
     x = x.float()
+    if _2class and x.shape[1] != 1:
+        target = f_2class(target, dim=1) # (b,2,h,w)
     output = F.binary_cross_entropy_with_logits(x, target.float())
-    # output = output / x[0,1]
     return output
 
 
@@ -290,42 +361,121 @@ if __name__ == '__main__':
     from Dataloader_breastUS import ImageToImage2D
     from torch.utils.data import DataLoader
     from Use_model import Use_model
-    from zoo.MedT.lib.models.axialnet import MedT
     import argparse
     import torch
     import segmentation_models_pytorch as smp
     import sys
+    import yaml
+    import os
+
+    def parser_args(model_name=None):
+        parser = argparse.ArgumentParser(description='test loss function')
+        ds_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
+        vds_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
+
+        'yaml test'
+        parser.add_argument('--fname', type=str, help='name of config file to load',
+                            default=r"D:\Programming\AI&ML\model\config\loss_config.yaml")
+
+        def _process_main(fname):
+            import logging, pprint
+            logging.basicConfig()
+            logger = logging.getLogger()
+            params = None
+            with open(fname, 'r') as y_file:
+                params = yaml.load(y_file, Loader=yaml.FullLoader)
+                logger.info('loaded params...')
+                pp = pprint.PrettyPrinter(indent=4)
+                pp.pprint(params)
+            dump = os.path.join(fr'{params["save"]["direc"]}', 'test loss setting.yaml')
+            with open(dump, 'w') as f:  # 寫入檔案
+                yaml.dump(params, f)
+            return params
+
+        fname = r'D:\Programming\AI&ML\model\config\loss_config.yaml'
+        args = _process_main(fname)
+        print(args['meta']['modelname'])
+
+        # Training parameter setting
+        parser.add_argument('--epoch', default=args['optimization']['epochs'], type=int, help='需要跑的輪數')
+        parser.add_argument('-bs', '--batchsize', default=args['optimization']['batchsize'], type=int)
+        parser.add_argument('-is', '--imgsize', type=int, default=args['data']['imgsize'], help='圖片大小')
+        parser.add_argument('-ic', '--imgchan', type=int, default=args['data']['imgchan'], help='使用資料的通道數，預設3(RGB)')
+        parser.add_argument('-class', '--classes', type=int, default=args['data']['classes'],
+                            help='model輸出影像通道數(grayscale)')
+        parser.add_argument('-model', '--modelname', default=args['meta']['modelname'], type=str)
+        parser.add_argument('-ds_path', '--train_dataset', default=fr'{args["data"]["ds_path"]}', type=str,
+                            help='訓練資料集位置')
+        parser.add_argument('-vd', '--val_dataset', type=str, default=args['data']['val_dataset'], help='驗證用資料集所在位置')
+        parser.add_argument('--catagory', type=int, default=args['data']['catagory'], help='使用類別資料與否。如果使用，將輸出正常0，有腫瘤1')
+
+        # Model training setting
+        parser.add_argument('--device', type=str, default=args['meta']['device'], help='是否使用GPU訓練')
+        parser.add_argument('-ds', '--dataset', choices=['BreastUS'], default=args['data']['dataset'],
+                            help='選擇使用的資料集，默認GS，預設BreastUS')
+        parser.add_argument('--use_autocast', type=bool, default=args['meta']['use_autocast'], help='是否使用混和精度訓練')
+        parser.add_argument('--threshold', type=int, default=args['save']['threshold'],
+                            help='設定model output後二值化的threshold, 介於0-1之間')
+        parser.add_argument('--train_accumulation_steps', default=args['optimization']['train_accumulation_steps'],
+                            type=int, help='多少iters更新一次權重(可減少顯存負擔)')
+        parser.add_argument('--k_fold', type=int, default=args['optimization']['k_fold'], help='使用k_fold訓練')
+        parser.add_argument('--deep_supervise', type=bool, default=args['optimization']['deep_supervise'],
+                            help='使用深層監督')
+        parser.add_argument('--training', type=bool, default=args['meta']['training'], help='訓練狀態??')
 
 
+        # Optimizer Setting
+        parser.add_argument('--lr', type=float, default=args['optimization']['lr'], help='learning rate')
+        parser.add_argument('--scheduler', type=str, default=args['criterion']['scheduler'], help='使用的scheduler')
+        parser.add_argument('-opt', '--optimizer', type=str, default=args['criterion']['optimizer'],
+                            help='使用的optimizer')
+
+        # Loss function and Loss schedule
+        parser.add_argument('-loss', '--loss_fn', type=str, default=args['criterion']['loss'],
+                            choices=['wce', 'dice_coef_loss', 'IoU', 'FocalLoss', 'bce', 'lll', 'clsiou'])
+        parser.add_argument('-wce', '--wce_beta', type=float, default=1e-04,
+                            help='wce_loss的wce_beta值，如果使用wce_loss時需要設定')
+
+        # Save Setting
+        parser.add_argument('-sf', '--save_freq', type=int, default=args['save']['save_frequency'],
+                            help='多少個epoch儲存一次checkpoint')
+        parser.add_argument('--save_state_dict', type=bool, default=args['save']['save_state_dict'],
+                            help='是否只儲存權重，默認為權重')
+        parser.add_argument('--savemodel', type=bool, default=args['save']['savemodel'], help='是否儲存模型')
+        parser.add_argument('-r', '--run_formal', type=bool, default=args['save']['run_formal'],
+                            help='是否是正式訓練(if not, train 8 iters for each epoch)')
+        parser.add_argument('--direc', type=str, default=args['save']['direc'], help='directory to save')
+        parser.add_argument('--savefig_resize', type=bool, default=args['save']['savefig_resize'],
+                            help='savefig resize')
+        parser.add_argument('--load_state_dict', default=False, type=bool, help='')
+        parser.add_argument('--model_state', default=args['save']['model_state'], type=str, help='')
+
+        args = parser.parse_args()
+
+        return args
 
     # assign parameters
-    parser = argparse.ArgumentParser(description='Testers')
     us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
     test_ds = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
 
-    parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
-    parser.add_argument('-ic', '--imgchan', type=int, default=2, help='訓練影像通道數')
-    parser.add_argument('-b', '--batchsize', type=int, default=1, help='batchsize')
-    parser.add_argument('-mn', '--modelname', default='unet++_resnet34')
-    parser.add_argument('--device', default='cuda', help='是否使用GPU訓練')
-
-    args = parser.parse_args()
+    args = parser_args()
 
     # build dataloader and model
     dataset = ImageToImage2D(test_ds, img_size=(args.imgsize,args.imgsize), merge_train=False)
     DL = DataLoader(dataset, batch_size=args.batchsize, shuffle=True)
-    # model = MedT(args).cuda()
     model = Use_model(args)
 
     # load model from trained model
-    model_state = r"D:\Programming\AI&ML\model\TotalResult_HAND\20220223\test1\best_model.pth"
-    model.load_state_dict(torch.load(model_state))
-    model.eval()
+    if args.load_state_dict:
+        model_state = r"D:\Programming\AI&ML\model\TotalResult_HAND\20220223\test1\best_model.pth"
+        model.load_state_dict(torch.load(model_state))
+    if not args.training:
+        model.eval()
 
     for i, (image, mask) in enumerate(DL):
         oriout = out = model(image.cuda())
 
-        print(f'輸入影像大小:{image.shape}')
+        # print(f'輸入影像大小:{image.shape}')
         assert image.shape == (args.batchsize, 3, args.imgsize, args.imgsize), f'correct:{image.shape},'# confirm input format
         assert mask.shape == (args.batchsize, 1, args.imgsize, args.imgsize), f'correct:{mask.shape},' # confirm input format
 
@@ -333,19 +483,23 @@ if __name__ == '__main__':
         out = sigmoid_scaling(out) # 使用sigmoid歸一化
         out_iou = (out > 0.333).float() # 影像二值化
         # out_iou = out
-        # pdb.set_trace()
-        # assert x.shape == (1,2,256,256), f'模型輸出格式與loss輸入格式不符合，輸入格式為{x.shape},應為(1,2,256,256)'
+        assert out.shape == (args.batchsize,args.classes,args.imgsize,args.imgsize), f'模型輸出格式與loss輸入格式不符合，輸入格式為{out.shape},應為(1,2,256,256)'
         # o = weight_cross_entropy(x, mask, wce_beta=1e-07)
         iou_test = IoU(out_iou,mask.cuda())
         iou = classwise_iou(out_iou,mask.cuda())
         nll = LogNLLLoss()(out, mask.cuda())
         f1_s = classwise_f1(out, mask.cuda())
         wce = weight_cross_entropy(oriout, mask.cuda(), 1e-8)
+        bce = binary_cross_entropy(out, mask.cuda(), _2class=True)
+        dice_loss = dice_loss(out, mask.cuda())
 
-        print('IoU: {:2f}'.format(iou_test))
-        print('classwise_iou: {:2f}'.format(iou))
-        print('LogNLLLoss:', nll)
-        print('classwise_f1:', f1_s)
+        # print('IoU: {:2f}'.format(iou_test))
+        # print('classwise_iou: {:2f}'.format(iou))
+        # print('LogNLLLoss:', nll)
+        # print('classwise_f1:', f1_s)
+        print('dice_loss:', dice_loss)
+        print('f1_s:', f1_s)
+        print('iou:',  iou)
 
 
 

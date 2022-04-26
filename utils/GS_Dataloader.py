@@ -208,7 +208,7 @@ if __name__ == '__main__':
 
     from torch.utils.data import DataLoader
     import matplotlib.pyplot as plt
-    from model.show_img import Show_image
+    from Main_Research.show_img import Show_image
 
     dataset_path = r'../../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
     img_path = r'../../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_1.bmp'

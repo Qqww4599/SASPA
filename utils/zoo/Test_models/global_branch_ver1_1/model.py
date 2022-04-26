@@ -31,7 +31,7 @@ warnings.filterwarnings('ignore', message="None of the inputs have requires_grad
 
 
 '''
-global branch ver 1.1
+global branch ver 1.1.1
 
 更新紀錄:
     ver1.1:
@@ -217,7 +217,7 @@ class medical_transformer(nn.Module):
         # --- 區域注意力訓練開始 ---
         x_loc = x.clone() # x_loc表示x的local特徵
         # x_loc = self._local_attention(16, xin, x_loc)
-        x_loc = self._local_attention_ver2(16, xin, x_loc)
+        x_loc = self._local_attention_ver2(16, xin, x_loc=None)
 
         # ----- 結合全局特徵與區域特徵 -----
         x = torch.add(x, x_loc)

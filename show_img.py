@@ -91,7 +91,7 @@ def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     warnings.filterwarnings("ignore", category=matplotlib.MatplotlibDeprecationWarning)  # supress warning
 
     matplotlib.use('Agg') #不要顯示圖片
-    original_image,pred, mask, *_ = image
+    original_image, pred, mask, *_ = image
     original_size = (original_size[0].item(),(original_size[1].item()))  # (H,W),use item() change tensor to int
     # print(original_size)
     # 影像二值化。image1表示原本影像，image2表示mask影像
@@ -106,9 +106,7 @@ def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     if original_image.ndim == 4:
         original_image = original_image.squeeze(0) # 去掉batch維度
     pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to H,W,C
-    pred_binary = pred
     original_image = original_image.permute(1,2,0)
-    # print(pred) # H,W,C
 
     # ---- to torch tensor to numpy array ----
     original_image = original_image.numpy()

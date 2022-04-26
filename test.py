@@ -26,7 +26,23 @@ config = {'mp':"./TotalResult_HAND/20220222/test1/best_model.pth",
           'mn':'medt' ,
           'tdp': "D:/Programming/AI&ML/(Dataset)breast Ultrasound lmage Dataset/archive/val_ds2/images",
           }
+'''
+主要測試model使用的檔案
 
+進行測試時需要修改val_config內配置。包含模型名稱modelname、
+model_path
+modelname
+test_dataset_path = D:\Programming\AI&ML\(Dataset)STU-Hospital
+
+scale = 1 pred輸出是否要經過sigmoid scale
+save_path = 輸出影像儲存路徑
+classes = 1 模型輸出影像通道數
+show_image = 是否顯示影像
+
+已棄用: 
+binarization_th = 111 進行二值化之閥值
+binarization = 0 是否進行二值化
+'''
 def args_parser(config):
     parser = argparse.ArgumentParser()
     with open('./val_config.ini') as fp:
@@ -43,9 +59,12 @@ def args_parser(config):
         modelname = cfg.get('model_set', 'modelname')
         test_dataset_path = cfg.get('model_set', 'test_dataset_path')
         binarization_th = cfg.getint('model_set', 'binarization_th')
+        classes = cfg.getint('model_set', 'classes')
         binarization = cfg.getboolean('model_set', 'binarization') # 取得bool
         scale = cfg.getboolean('model_set', 'scale') # 取得bool
         save_path = cfg.get('model_set', 'save_path')
+        show_image = cfg.getboolean('model_set', 'show_image')
+
 
     parser.add_argument('-mp','--model_path', type=str, default=model_path)
     parser.add_argument('-mn','--modelname', default=modelname, type=str)
@@ -55,7 +74,8 @@ def args_parser(config):
     parser.add_argument('--mode', type=bool, help='是否只載入權重，默認載入權重')
     parser.add_argument('--save_path', type=str, default=save_path, help='圖片儲存位置')
     parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
-    parser.add_argument('-ic', '--classes', type=int, default=1, help='model輸出影像通道數(grayscale)')
+    parser.add_argument('--imgchan', type=int, default=3, help='')
+    parser.add_argument('-ic', '--classes', type=int, default=classes, help='model輸出影像通道數(grayscale)')
     parser.add_argument('--device', default='cuda', help='是否使用GPU訓練')
     parser.add_argument('--save_result', default=True, type=bool, help='是否save影像')
     # mask傳入設定
@@ -66,6 +86,10 @@ def args_parser(config):
     parser.add_argument('--binarization', type=bool, default=binarization, help='')
     parser.add_argument('--binarization_th', type=int, default=binarization_th, help='')
     parser.add_argument('--adp_bi', type=int, default=binarization_th, help='自適應二值化')
+    parser.add_argument('--deep_supervise', type=bool, default=False, help='使用深層監督')
+    parser.add_argument('--show_image', type=bool, default=show_image, help='show_image')
+    parser.add_argument('--save_pred_binary', type=bool, default=True, help='')
+
 
     args = parser.parse_args()
 
@@ -131,13 +155,16 @@ class test_dataloader(DataLoader):
         return img_out, mask_out, (original_img_size,original_mask_size)
 
 def calculate(model_out, mask):
+    '''注意輸入的影像數值是否為[0,255]'''
     iou = IoU(model_out, mask.cuda())
-    f1_s = classwise_f1(model_out, mask.cuda())  # 這邊有用
+    f1_s = classwise_f1(model_out, mask.cuda(), testing=True)  # 這邊有用
+    m_dice = DiceLoss()
+    Dice = 1 - dice_loss(mask, model_out // 255, )
     # print('f1:', f1_s, 'IoU:', iou)
-    return f1_s.cpu().detach().numpy().astype(float), iou.cpu().detach().numpy()
+    return f1_s.cpu().detach().numpy().astype(float), iou.cpu().detach().numpy(), Dice.cpu().detach().numpy()
 
 def adaptiveThreshold(img):
-    img = img[:,:,-1].numpy() * 255
+    img = img[:,:,0].numpy() * 255
     img = img.astype(np.uint8)
     assert type(img)==np.ndarray, f'{type(img)}'
     img = cv2.medianBlur(img,5)
@@ -148,7 +175,7 @@ def adaptiveThreshold(img):
 
 def main():
 
-    sys.path.append(r'D:\Programming\AI&ML\model\train_ver2.py')
+    sys.path.append(r'D:\Programming\AI&ML\Main_Research\train_ver2.py')
     from train_ver2 import eval
 
     args = args_parser(config)
@@ -162,7 +189,7 @@ def main():
     ds_mask = args.ds_mask
     binarization_th = args.binarization_th / 255.
 
-    f1_final, iou_final = 0., 0.
+    f1_final, iou_final, Dice_final = 0., 0., 0.
 
     infer_time = 0
     for i, (image ,mask, size) in enumerate(dataloader):
@@ -178,76 +205,56 @@ def main():
         if args.binarization:
             pred = (pred > binarization_th).float() # 影像二值化
         if ds_mask:
-            f1, iou = calculate(pred, mask)
+            # 先經過自適應二值化
+            pred = pred.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,2
+            mean_th, gussan_th = adaptiveThreshold(pred)
+            # gussan_th = 255 - gussan_th
+            # pred[:,:,0] = 255 - pred[:,:,0]
+
+            f1, iou, Dice = calculate(torch.tensor(gussan_th).reshape(1,1,args.imgsize, args.imgsize).cuda(), mask)
             f1_final += f1
             iou_final += iou
+            Dice_final += Dice
             graph_num += 1
         if args.adp_bi:
-
-
-            pred = pred.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,2
             image = image.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,3
-            mean_th, gussan_th = adaptiveThreshold(pred)
-            plt.subplot(1, graph_num, 1)
+            # mean_th, gussan_th = adaptiveThreshold(pred)
+            plt.subplot(221)
+            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+            plt.axis('off')
+            plt.title('GT')  # 1*3的圖片 的 第1張
+            plt.imshow(mask.cpu().reshape(128,128))
+
+            plt.subplot(222)
+            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
+            plt.axis('off')
+            plt.title('binary_blend')  # 1*3的圖片 的 第1張，影像融合
+            plt.imshow(gussan_th, alpha=0.5)
+            plt.imshow(image, alpha=0.5)
+            if args.save_pred_binary:
+                f_name = os.path.join(args.save_path, 'pred_file', f'{i} pred.png')
+                cv2.imwrite(f_name, gussan_th)
+
+            plt.subplot(223)
             plt.xticks([]), plt.yticks([])  # 關閉座標刻度
             plt.axis('off')
             plt.title('image')  # 1*3的圖片 的 第1張
             plt.imshow(image)
 
-            plt.subplot(1, graph_num, 2)
-            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-            plt.axis('off')
-            plt.title('gussan_th_blend')  # 1*3的圖片 的 第1張，影像融合
-            plt.imshow(gussan_th, alpha=0.3)
-            plt.imshow(image, alpha=0.7)
-
-            plt.subplot(1, graph_num, 3)
+            plt.subplot(224)
             plt.xticks([]), plt.yticks([])  # 關閉座標刻度
             plt.axis('off')
             plt.title('pred')  # 1*3的圖片 的 第1張
-            plt.imshow(pred[:,:,-1])
+            plt.imshow(pred[:,:,0])
 
-
-            plt.show()
-            if i == 2:
-                break
+            save_path = os.path.join(args.save_path, f'{i}')
+            plt.savefig(save_path)
+            if args.show_image:
+                plt.show()
             continue
 
-        if args.save_result:
-            pred = pred.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,2
-            image = image.to('cpu').detach().squeeze(0).permute(1, 2, 0)  # h,w,3
-            # mask = image.to('cpu').detach().squeeze()  # h,w
-            save_path = os.path.join(args.save_path, f'{i}')
-            plt.subplot(1, graph_num, 1)
-            plt.xticks([]), plt.yticks([])  # 關閉座標刻度
-            plt.axis('off')
-            plt.title('original')  # 1*3的圖片 的 第1張
-            plt.imshow(image)
-
-            plt.subplot(1, graph_num, 2)  # 1*3的圖片 的 第2張
-            plt.xticks([]), plt.yticks([])
-            plt.axis('off')  # 關閉座標刻度
-            plt.title('model pred')
-            plt.imshow(pred[:,:,1])
-
-            if ds_mask:
-                assert mask.shape == (args.batchsize, 1, args.imgsize,
-                                      args.imgsize), f'correct:{mask.shape}, should be (1,1,h,w)'  # confirm input format
-                plt.subplot(1, graph_num, graph_num)
-                plt.xticks([]), plt.yticks([])
-                plt.axis('off')  # 關閉座標刻度
-                plt.title('GT')
-                plt.imshow(mask.to('cpu').detach().squeeze(0).permute(1,2,0))
-
-            if not save:
-                plt.show()
-            else:
-                plt.savefig(save_path)
-        # if i == 1:
-        #     break
-
     # print('test_avg_f1:{:4f}'.format(f1_final/(i+1)),',', 'test_avg_iou:{:4f}'.format(iou_final/(i+1)))
-    print('test_avg_f1',f1_final/(i+1),',', 'test_avg_iou:', iou_final/(i+1))
+    print('F1 score TEST data: ',f1_final/(i+1),',', 'mIoU TEST data:', iou_final/(i+1), f'Dice TEST data: {Dice_final/(i+1)}')
     print('avg inferance time:', infer_time/(i+1),)
 
 if __name__ == '__main__':

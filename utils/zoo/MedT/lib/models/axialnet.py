@@ -728,7 +728,7 @@ def gated(args, pretrained=False, **kwargs):
     return model
 
 def MedT(args,pretrained=False, **kwargs):
-    model = medt_net(AxialBlock_dynamic,AxialBlock_wopos, [1, 2, 4, 1], img_size=args.imgsize, num_classes=args.imgchan, s= 0.125,  **kwargs)
+    model = medt_net(AxialBlock_dynamic,AxialBlock_wopos, [1, 2, 4, 1], img_size=args.imgsize, num_classes=args.classes, s= 0.125,  **kwargs)
     return model
 
 def logo(args, pretrained=False, **kwargs):

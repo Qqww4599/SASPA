@@ -622,12 +622,7 @@ class medt_retrofit_model(nn.Module):
         # self.decoder3 = nn.Conv2d(int(1024*s),  int(512*s), kernel_size=3, stride=1, padding=1)
         self.decoder4 = nn.Conv2d(int(512 * s), int(256 * s), kernel_size=3, stride=1, padding=1)
         self.decoder5 = nn.Conv2d(int(256 * s), int(128 * s), kernel_size=3, stride=1, padding=1)
-        self.adjust1 = nn.Conv2d(int(128 * s), int(128 * s), kernel_size=1, stride=1, padding=0)
-        self.adjust2 = nn.Conv2d(int(128 * s), int(128 * s), kernel_size=1, stride=1, padding=0)
-        self.adjust3 = nn.Sequential(
-            nn.Conv2d(int(128 * s), num_classes, kernel_size=1, stride=1, padding=0),
-            nn.Softmax(dim=2),
-        )
+        self.adjust   = nn.Conv2d(int(128*s) , num_classes, kernel_size=1, stride=1, padding=0)
 
 
         self.soft = nn.Softmax(dim=1)
@@ -668,6 +663,7 @@ class medt_retrofit_model(nn.Module):
         self.global_cnn = global_cnn
         if self.global_cnn is not None:
             self.global_branch = use_global_branch(self.global_cnn, pretarin=False)
+        self.init_conv = nn.Conv2d(16 * 3, 3, 1, bias=False)  # 測試local部分加速運算
 
     def _make_layer(self, block, planes, blocks, kernel_size=56, stride=1, dilate=False):
         norm_layer = self._norm_layer
@@ -730,9 +726,9 @@ class medt_retrofit_model(nn.Module):
             # x = torch.add(x, x3)
             # x = F.relu(F.interpolate(self.decoder3(x3) , scale_factor=(2,2), mode ='bilinear'))
             # x = torch.add(x, x2)
-            x = F.relu(F.interpolate(checkpoint(self.decoder4, x2), scale_factor=(2, 2), mode='bilinear'))
+            x = F.relu(F.interpolate(checkpoint(self.decoder4, x2), scale_factor=(2, 2), mode='bilinear', align_corners=True))
             x = torch.add(x, x1) # 8, 32, 64, 64
-            x = F.relu(F.interpolate(checkpoint(self.decoder5, x), scale_factor=(2, 2), mode='bilinear'))
+            x = F.relu(F.interpolate(checkpoint(self.decoder5, x), scale_factor=(2, 2), mode='bilinear', align_corners=True))
             # print(x.shape) 8, 16, 128, 128
 
         # end of full image training
@@ -767,27 +763,79 @@ class medt_retrofit_model(nn.Module):
                     x3_p = self.layer3_p(x2_p)
                     x4_p = self.layer4_p(x3_p)
 
-                    x_p = F.relu(F.interpolate(checkpoint(self.decoder1_p, x4_p), scale_factor=(2, 2), mode='bilinear'))
+                    x_p = F.relu(F.interpolate(checkpoint(self.decoder1_p, x4_p), scale_factor=(2, 2), mode='bilinear', align_corners=True))
                     x_p = torch.add(x_p, x4_p)
-                    x_p = F.relu(F.interpolate(checkpoint(self.decoder2_p, x_p), scale_factor=(2, 2), mode='bilinear'))
+                    x_p = F.relu(F.interpolate(checkpoint(self.decoder2_p, x_p), scale_factor=(2, 2), mode='bilinear', align_corners=True))
                     x_p = torch.add(x_p, x3_p)
-                    x_p = F.relu(F.interpolate(checkpoint(self.decoder3_p, x_p), scale_factor=(2, 2), mode='bilinear'))
+                    x_p = F.relu(F.interpolate(checkpoint(self.decoder3_p, x_p), scale_factor=(2, 2), mode='bilinear', align_corners=True))
                     x_p = torch.add(x_p, x2_p)
-                    x_p = F.relu(F.interpolate(checkpoint(self.decoder4_p, x_p), scale_factor=(2, 2), mode='bilinear'))
+                    x_p = F.relu(F.interpolate(checkpoint(self.decoder4_p, x_p), scale_factor=(2, 2), mode='bilinear', align_corners=True))
                     x_p = torch.add(x_p, x1_p)
-                    x_p = F.relu(F.interpolate(checkpoint(self.decoder5_p, x_p), scale_factor=(2, 2), mode='bilinear'))
+                    x_p = F.relu(F.interpolate(checkpoint(self.decoder5_p, x_p), scale_factor=(2, 2), mode='bilinear', align_corners=True))
                     x_loc[:, :, h * i:h * (i + 1), w * j:w * (j + 1)] = x_p
             return x_loc
-        x_loc = patch_attention(16, xin)
+        def _local_attention_ver2(patches, xin):
+            '''
+            Notice: 比較原版_local_attention減少兩層迴圈，將patches整合單一特徵中
+                    增加一層init_conv(1x1 conv)調整維度。16*3 -> 3
+                    速度比原版_local_attention快更多，平均0.025178154，相較原版0.371444146快14.75263601倍
+
+            學習patch注意力，包含注意力層前的埢積部分
+            Parameter:
+                xin: B,3,H,W，是輸入的原影像
+            '''
+            from einops import rearrange
+            _, _, H, W = xin.shape
+            H_len, W_len = int(patches ** 0.5), int(patches ** 0.5)
+            xin = rearrange(xin, 'b c (l h) (l2 w) -> b (l l2 c) h w', l=4, l2=4)
+            x_p = self.init_conv(xin)
+            # begin patch wise
+            x_p = self.conv1_p(x_p)
+            x_p = self.bn1_p(x_p)
+            # x = F.max_pool2d(x,2,2)
+            x_p = self.relu(x_p)
+            x_p = self.conv2_p(x_p)
+            x_p = self.bn2_p(x_p)
+            # x = F.max_pool2d(x,2,2)
+            x_p = self.relu(x_p)
+            x_p = self.conv3_p(x_p)  # B,64,H/8,H/8
+            x_p = self.bn3_p(x_p)
+            # x = F.max_pool2d(x,2,2)
+            x_p = self.relu(x_p)
+
+            # x = self.maxpool(x)
+            x1_p = self.layer1_p(x_p)
+            x2_p = self.layer2_p(x1_p)
+            x3_p = self.layer3_p(x2_p)
+            x4_p = self.layer4_p(x3_p)
+
+            x_p = F.relu(
+                F.interpolate(self.decoder1_p(x4_p), scale_factor=(2, 2), mode='bilinear', align_corners=False))
+            x_p = torch.add(x_p, x4_p)
+            x_p = F.relu(F.interpolate(self.decoder2_p(x_p), scale_factor=(2, 2), mode='bilinear', align_corners=False))
+            x_p = torch.add(x_p, x3_p)
+            x_p = F.relu(F.interpolate(self.decoder3_p(x_p), scale_factor=(2, 2), mode='bilinear', align_corners=False))
+            x_p = torch.add(x_p, x2_p)
+            x_p = F.relu(F.interpolate(self.decoder4_p(x_p), scale_factor=(2, 2), mode='bilinear', align_corners=False))
+            x_p = torch.add(x_p, x1_p)
+            x_p = F.relu(F.interpolate(self.decoder5_p(x_p), scale_factor=(2, 2), mode='bilinear', align_corners=False))
+            x_p = rearrange(x_p, 'b (l l2 c) h w -> b c (l h) (l2 w)', l=4, l2=4)
+
+            return x_p
+
+        # x_loc = patch_attention(16, xin)
+        x_loc = _local_attention_ver2(16, xin)
+
+
+
         # if self.multiple_features:
         #     x_loc_2 = patch_attention(9, xin)
         #     x_loc += x_loc_2
         x = torch.add(x, x_loc)
 
         x = F.relu(self.decoderf(x)) # 兩次relu沒有效果，已去除
-        x = self.adjust1(x)
-        x = self.adjust2(x)
-        x = self.adjust3(x)
+        x = self.adjust(x)
+
 
 
         # 試著最後加入softmax
@@ -803,9 +851,9 @@ def medt_retrofit_model_use(args, pretrained=False, **kwargs):
                                 AxialBlock_wopos,
                                 [1, 2, 4, 1],
                                 img_size=args.imgsize,
-                                num_classes=args.imgchan,
+                                num_classes=args.classes,
                                 s=0.125,
-                                global_cnn='resnet18',
+                                global_cnn=None,
                                 **kwargs)
     return model
 

@@ -1,5 +1,5 @@
 criterion:
-  loss: bce
+  loss: diceloss
   scheduler: ReduceLROnPlateau
   optimizer: adam
 
@@ -17,25 +17,26 @@ logging:
   folder: .\config
 
 meta:
-  Name: global branch ver1.1 with position embedding, with deep supervise
+  Name: test dice loss with 1 class 
   modelname: TEST
   use_autocast: 0
   device: cuda:0
 
 optimization:
-  epochs: 10
+  epochs: 100
   batchsize: 8
   lr: 0.001
   weight_decay: 1e-5
   train_accumulation_steps: 4
   k_fold: 5
-  deep_supervise: True
+  deep_supervise: false
+  pos: false
 
 save:
-  save_frequency: 10
+  save_frequency: 5
   save_state_dict: True
-  savemodel: False
-  run_formal: False
+  savemodel: True
+  run_formal: True
   direc: ./Model_Result
   savefig_resize: False
   threshold: 0.333

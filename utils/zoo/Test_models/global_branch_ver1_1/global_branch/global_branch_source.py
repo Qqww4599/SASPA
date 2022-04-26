@@ -187,7 +187,7 @@ class conv_attn_blocks(nn.Module):
 
 
 class global_branch(nn.Module):
-    def __init__(self, c_in=32, c_out=3, dilation=1, deep_sup=True):
+    def __init__(self, c_in=32, c_out=3, dilation=1, deep_sup=True, pos=True):
         '''
         Parameters:
             c_in: 輸入特徵維度
@@ -200,25 +200,43 @@ class global_branch(nn.Module):
         self.c_out = c_out
         self.dilation = dilation
         self.deep_sup = deep_sup
+        self.pos = pos
+        self.classes = 1
 
         if self.dilation > 1:
             raise NotImplementedError('dilation>1  is not allow in this model!')
 
+        # Original
+        # layers = {'L1': 3,
+        #           'L2_0': 4, 'L2_1': 4,
+        #           'L3': 2,
+        #           'L4_0': 4, 'L4_1': 4,
+        #           'L5': 3, }
+
+        # No attn
+        layers = {'L1':3,
+                  'L2_0':4,'L2_1':0,
+                  'L3':2,
+                  'L4_0':4,'L4_1':0,
+                  'L5':3,}
 
 
-
-
-        self.L1 = self._make_layer(self.c_in, 2 * self.c_in, block=conv_basic_block, layers=3, )
+        self.L1 = self._make_layer(self.c_in, 2 * self.c_in, block=conv_basic_block, layers=layers['L1'], )
         self.maxpool = nn.MaxPool2d(kernel_size=2)
-        self.L2_0 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=conv_basic_block, layers=4)
+        self.L2_0 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=conv_basic_block, layers=layers['L2_0'])
         self.pos_embedding = pos_embedding(2 * self.c_in, norm=True)
-        self.L2_1 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=attn_basic_block, layers=4)
-        self.L3 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=conv_basic_block, layers=2)
+        self.L2_1 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=attn_basic_block, layers=layers['L2_1'])
+        self.L3 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=conv_basic_block, layers=layers['L3'])
 
 
-        self.L4_0 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=conv_basic_block, layers=4)
-        self.L4_1 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=attn_basic_block, layers=4)
-        self.L5 =  self._make_layer(2 * self.c_in, self.c_out, block=conv_basic_block, layers=3)
+        self.L4_0 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=conv_basic_block, layers=layers['L4_0'])
+        self.L4_1 = self._make_layer(2 * self.c_in, 2 * self.c_in, block=attn_basic_block, layers=layers['L4_1'])
+        self.L5 =  self._make_layer(2 * self.c_in, self.c_out, block=conv_basic_block, layers=layers['L5'])
+
+        # deep supervise channel adjust
+        self.adjust_in = nn.Conv2d(2 * self.c_in, self.classes, 1)
+        self.adjust_out = nn.Conv2d(self.classes, 2 * self.c_in, 1)
+
 
         # init weight
         for m in self.modules():
@@ -238,6 +256,8 @@ class global_branch(nn.Module):
         layers: 建構層數量
 
         '''
+        if layers == 0:
+            return nn.Sequential(nn.Identity())
         modules_layer = nn.ModuleList()
         modules_layer.append(block(inplane, outplane))
         for _ in range(1,layers):
@@ -250,12 +270,16 @@ class global_branch(nn.Module):
         x_l1 = self.L1(x)
         x = self.maxpool(x_l1)
         x_l2 = self.L2_0(x)
-        x_l2 = self.pos_embedding(x_l2)
+        if self.pos:
+            x_l2 = self.pos_embedding(x_l2)
         x_l2 = self.L2_1(x_l2)
 
         x = self.L3(x_l2)
         if self.deep_sup:
-            fea_sup = x.clone()
+            fea_sup = self.adjust_in(x)
+            x = self.adjust_out(fea_sup)
+            # old version
+            # fea_sup = x.clone()
 
         x = torch.add(x, x_l2)
         x_l4 = self.L4_0(x)

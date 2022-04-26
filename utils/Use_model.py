@@ -17,15 +17,12 @@ def Use_model(args):
     if model_name == 'medt':
         from .zoo.MedT.lib.models.axialnet import MedT
         model = MedT(args)
-
     if model_name == 'gated':
         from .zoo.MedT.lib.models.axialnet import gated
         model = gated(args)
-
     if model_name == 'U_net':
         from .zoo import U_net
         model = U_net.U_Net(img_ch=3, output_ch=3)
-
     if model_name == 'logo':
         from .zoo.MedT.lib.models.axialnet import logo
         model = logo(args)
@@ -52,14 +49,23 @@ def Use_model(args):
 
     # 2022/3/16, 2022/3/17測試使用之model
     if model_name == 'multi_loss':
-        from .zoo.Test_models.multi_loss_return_medt.multi_loss_return_medt import medt_retrofit_model_use
+        from ..utils.zoo.Test_models.multi_loss_return_medt.multi_loss_return_medt import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)
     if model_name == 'without_attn':
         from .zoo.Test_models.medt_global_wo_attn.medt_global_wo_attn import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)
 
+    # 測試用
+    if model_name == '20220422 test1':
+        from .zoo.medt_conv_map import medt_retrofit_model_use
+        model = medt_retrofit_model_use(args)
+    if model_name == '20220423 test1':
+        from .zoo._20220423test1 import medt_retrofit_model_use
+        model = medt_retrofit_model_use(args)
+
     # 測試新model使用
     if model_name == 'TEST':
+        # from model.utils.zoo.Test_models.global_branch_ver1_1.model import medt
         from .zoo.Test_models.global_branch_ver1_1.model import medt
         model = medt(args)
 

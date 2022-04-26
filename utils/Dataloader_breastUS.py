@@ -183,8 +183,6 @@ class ImageToImage2D(Dataset):
             self.images_list = [os.path.join(self.input_path,i) for i in os.listdir(self.input_path)]
             self.masks_list = [os.path.join(self.output_path,i) for i in os.listdir(self.output_path)]
 
-
-
     def __len__(self):
         return len(self.images_list)
 
@@ -223,7 +221,6 @@ class ImageToImage2D(Dataset):
         if self.get_catagory is not None:
             return image, mask, self.img_catagory
         return image, mask
-
 
 class Image2D(DataLoader):
     '''
