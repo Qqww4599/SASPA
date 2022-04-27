@@ -2,8 +2,6 @@ criterion:
   loss: diceloss
   scheduler: ReduceLROnPlateau
   optimizer: adam
-
-
 data:
   ds_path: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT
   val_dataset: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2
@@ -12,16 +10,13 @@ data:
   classes: 1
   catagory: null
   dataset: BreastUS
-
 logging:
   folder: .\config
-
 meta:
-  Name: test dice loss with 1 class 
+  Name: Local branch ver1.1 with diceloss, one class
   modelname: TEST
   use_autocast: 0
   device: cuda:0
-
 optimization:
   epochs: 100
   batchsize: 8
@@ -31,9 +26,8 @@ optimization:
   k_fold: 5
   deep_supervise: false
   pos: false
-
 save:
-  save_frequency: 5
+  save_frequency: 25
   save_state_dict: True
   savemodel: True
   run_formal: True

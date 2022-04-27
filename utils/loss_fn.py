@@ -149,7 +149,6 @@ class DiceLoss(nn.Module):
 def dice_loss(target, predictive, ep=1e-8):
     '''
     陳中銘老師推薦的指標
-
     '''
     intersection = 2 * torch.sum(predictive * target) + ep
     union = torch.sum(predictive) + torch.sum(target) + ep
@@ -387,9 +386,9 @@ if __name__ == '__main__':
                 logger.info('loaded params...')
                 pp = pprint.PrettyPrinter(indent=4)
                 pp.pprint(params)
-            dump = os.path.join(fr'{params["save"]["direc"]}', 'test loss setting.yaml')
-            with open(dump, 'w') as f:  # 寫入檔案
-                yaml.dump(params, f)
+            # dump = os.path.join(fr'{params["save"]["direc"]}', 'test loss setting.yaml')
+            # with open(dump, 'w') as f:  # 寫入檔案
+            #     yaml.dump(params, f)
             return params
 
         fname = r'D:\Programming\AI&ML\model\config\loss_config.yaml'

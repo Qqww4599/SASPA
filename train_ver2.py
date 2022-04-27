@@ -13,17 +13,13 @@ from sklearn.model_selection import KFold
 import numpy as np
 
 from utils.Dataloader_breastUS import ImageToImage2D,Image2D,JointTransform2D
-from utils import loss_fn, Use_model, adaptation_th
+from utils import loss_fn, Use_model
 from utils.Use_model import *
 from show_img import Save_image
-from utils.remove_readonly import remove_readonly
+from utils import Other_utils as OU
 
 import argparse
 import yaml
-
-
-
-
 
 '''
 Train script ver1.0
@@ -43,12 +39,18 @@ pass
         1. yaml功能。新增資料讀取方法
         2. 資料視覺化與計算f1 score, iou計算影像相同
         3. 新增deep supervise功能。都用if else來寫，目前非常不好維護，後面需要修改。
+    train ver1.1.0
+        2022/4/27
+        1. 更改程式架構: 分成Optimizer、K Fold、Training部分，增加註解
+        2. init_training_result_folder與save_model_mode移到新檔案Other_utils中
+        3. 目前問題: 模型進入第二個fold以後結果不良
 
 '''
 
+print('Training script version 1.1.0', 'Last edit in 20220427', sep='\n')
+
 def main(args):
     save_freq = args.save_freq
-    safe_mode = 1
     args.use_autocast = bool(args.use_autocast)
     train_dataset = ImageToImage2D(args.train_dataset, img_size=(args.imgsize, args.imgsize), get_catagory=args.catagory)
     # train_dataset = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -57,6 +59,7 @@ def main(args):
     splits = KFold(n_splits=int(args.k_fold), shuffle=True, random_state=42)  # 設定random_state使輸出都一樣
 
     model = Use_model(args)
+    criteriwe = use_loss_fn(args)
     optimizer = use_opt(args, model)
     scheduler = use_scheduler(args, optimizer)
     writer = SummaryWriter('./Model_Result/log')
@@ -76,36 +79,49 @@ def main(args):
                                    dataloader=train_loader,
                                    model=model,
                                    optimizer=optimizer,
-                                   scheduler=scheduler)
+                                   scheduler=scheduler,
+                                   lossfn=criteriwe)
             writer.add_scalar(f'training {args.loss_fn} loss', scalar_value=loss, global_step=i+(args.epoch*fold))
             if i % save_freq == 0:
                 assert save_freq > 1, 'save_freq只能設定大於1。'
                 val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize))
                 final_val_dataset = DataLoader(val_dataset)
-                folder_name = fr'./Model_Result/val_images/fold{fold}_epoch{epoch}'
-                val_loss, f1, iou = eval(final_val_dataset, model, folder_name, binarization=False,
-                                                   scaling=True, save=True)  # must set scaling and binarization
+                folder_name = fr'./Model_Result/val_images/fold{fold+1}_epoch{epoch+1}'
+                save_model_name = f'./Model_Result/model_fold_{fold + 1}_{epoch+1}.pth'
+                val_loss, f1, iou = eval(final_val_dataset, model, folder_name,
+                                         binarization=False,
+                                         scaling=True, # must set scaling and binarization
+                                         save_valid_img=True,
+                                         lossfn=criteriwe,
+                                         save_model=False,
+                                         save_model_name=save_model_name)
                 writer.add_scalar(f'fold_{fold} val_loss', scalar_value=val_loss, global_step=i)
                 writer.add_scalar(f'fold_{fold} f1 score', scalar_value=f1, global_step=i)
                 writer.add_scalar(f'fold_{fold} mIoU score', scalar_value=iou, global_step=i)
-                # if args.savemodel:
-                #     save_name = ''
-                #     save_model_mode(model, safe_mode, save_freq, i)
             if i + 1 == args.epoch:  # 測試用的epoch, test_epoch=1 代表訓練兩個epoch
                 print('=' * 10, 'last one eval', '=' * 10)
                 val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize))
                 final_val_dataset = DataLoader(val_dataset)
-                folder_name = fr'./Model_Result/val_images/fold{fold}_epoch{epoch}'
-                val_loss, f1, iou = eval(final_val_dataset, model, folder_name, binarization=False, scaling=False, save=True)
+                folder_name = fr'./Model_Result/val_images/fold{fold+1}_epoch{epoch+1}'
+                save_model_name = f'./Model_Result/model_fold_{fold + 1}.pth'
+                val_loss, f1, iou = eval(final_val_dataset, model, folder_name,
+                                         binarization=False,
+                                         scaling=False,
+                                         save_valid_img=True,
+                                         lossfn=criteriwe,
+                                         save_model=args.savemodel,
+                                         save_model_name=save_model_name)
                 f_val_loss += val_loss
                 f_f1 += f1
                 f_iou += iou
                 print('=' * 10, 'last one eval finish!!!!!', '=' * 10)
-                if args.savemodel:
-                    save_name = f'./Model_Result/model_fold_{fold+1}.pth'
-                    save_model_mode(model, save_name)
-                    # 模型初始化
-                    model = Use_model(args)
+                #
+                # ---------- 模型初始化 ------------
+                model = Use_model(args)
+                criteriwe = use_loss_fn(args)
+                optimizer = use_opt(args, model)
+                scheduler = use_scheduler(args, optimizer)
+                # -------------- Finish --------------
                 break
     f_val_loss, f_f1, f_iou = f_val_loss/(fold+1), f_f1/(fold+1), f_iou/(fold+1)
     print('f_val_loss:{:8f}, f_f1:{:8f}, f_iou:{:8f}'.format(f_val_loss.item(), f_f1.item(), f_iou.item()))
@@ -113,7 +129,7 @@ def main(args):
     time_end = time.time()
     print('training Done! Use {:.2f} s'.format(time_end - time_start))
 
-def train_one_epoch(args, dataloader, model, optimizer, scheduler):
+def train_one_epoch(args, dataloader, model, lossfn, optimizer, scheduler):
     scaler = GradScaler(enabled=args.use_autocast)
     model.to(args.device)
     model.train()
@@ -128,10 +144,10 @@ def train_one_epoch(args, dataloader, model, optimizer, scheduler):
                 output, *f = model(image)
                 f = f[0]
                 f = f.clone().detach().requires_grad_(True)
-                f_loss = deep_supervise(f, mask=mask)
+                f_loss = deep_supervise(f, mask=mask, lossfn=lossfn)
             else:
                 output = model(image)
-            loss = (choose_loss_fn(output, mask) + f_loss) / train_accumulation_steps
+            loss = (lossfn(output, mask) + f_loss) / train_accumulation_steps
         if args.use_autocast:
             FutureWarning('AMP is ON, precision will a little down')
             scaler.scale(loss).backward(retain_graph=True)
@@ -151,14 +167,15 @@ def train_one_epoch(args, dataloader, model, optimizer, scheduler):
             return loss
 
 
-def eval(val_dataset, model, folder_name, binarization=False, scaling=False, save=False):
+def eval(val_dataset, model, folder_name, lossfn, binarization=False, scaling=False,
+         save_valid_img=False, save_model=False, save_model_name=None):
     model.eval()
     model.to('cuda')
     print('start eval!!!')
     save_path = folder_name
     test_loss, f1, iou = 0., 0., 0.
 
-    original_size = torch.tensor((128,128))
+    original_size = torch.tensor((args.imgsize,args.imgsize))
 
     for i, (original_image, mask) in enumerate(val_dataset):
         original_image = original_image.to('cuda') if torch.cuda.is_available() else original_image
@@ -168,18 +185,17 @@ def eval(val_dataset, model, folder_name, binarization=False, scaling=False, sav
                 pred, *_ = model(x) # b,c,h,w
             else:
                 pred = model(x) # b,c,h,w
-
             pred = pred.to('cpu')
             # Use loss function
             if scaling:
                 pred = loss_fn.sigmoid_scaling(pred)
             if binarization:
                 pred = (pred > args.threshold).float() # 1, 1, 128, 128
-            pred = adaptation_th.THRESH_BINARY_for_pred(pred, return_tensor=True)
-            test_loss += choose_loss_fn(pred, mask)
+            pred = OU.THRESH_BINARY_for_pred(pred, return_tensor=True)
+            test_loss += lossfn(pred, mask)
             f1 += loss_fn.classwise_f1(pred, mask)
             iou += loss_fn.IoU(pred, mask)
-        if save:
+        if save_valid_img:
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             Save_image(original_image.to('cpu'), pred, mask,
@@ -189,7 +205,8 @@ def eval(val_dataset, model, folder_name, binarization=False, scaling=False, sav
                        th=int(args.threshold * 255),
                        resize=args.savefig_resize
                        )
-
+    if save_model and save_model_name:
+        OU.save_model_mode(model, save_model_name)
     val_loss = test_loss / len(val_dataset)
     f1 = f1 / len(val_dataset)
     iou = iou / len(val_dataset)
@@ -202,84 +219,72 @@ def eval(val_dataset, model, folder_name, binarization=False, scaling=False, sav
 
     # =============================額外增加功能放在這邊=============================
 def save_training_images(image):
-    '''儲存訓練過程產生的影像，假設輸入影像大小為(1,c,h,w)'''
+    '''
+    ---------------------待刪改!!!-------------------------
+    儲存訓練過程產生的影像，假設輸入影像大小為(1,c,h,w)'''
     b,c,h,w = image.shape
     assert c in [1,2,3], f'c is not in [1,2,3], c is {c}'
     if torch.is_tensor(image):
         image = image.squeeze(0)
     save_image(image, './Model_Result/test_files/test_image.png')
-def choose_loss_fn(output, target):
-    # 選擇使用的loss function。
-    # 經過測試可以使用的(在MedT環境中)：weight_cross_entropy, dice_coef_loss,IoU,FocalLoss
-    # validation階段調用
-
-    if args.loss_fn == 'wce':
-        # wce 可以接受channel=1的output
-        loss_fn_name = 'wce'
-        loss = loss_fn.weight_cross_entropy(output, target, wce_beta=args.wce_beta)
-    elif args.loss_fn == 'bce':
-        # wce 可以接受channel=1的output
-        loss_fn_name = 'bce'
-        loss = loss_fn.binary_cross_entropy(output, target, _2class=bool(args.classes-1))
-    elif args.loss_fn == 'dice_coef_loss':
-        loss_fn_name = 'dice_coef_loss'
-        loss = loss_fn.dice_coef_loss(output, target)
-    elif args.loss_fn == 'IoU':
-        loss_fn_name = 'IoU'
-        loss = loss_fn.IoU(output, target)
-    elif args.loss_fn == 'FocalLoss':  # 這個criterion是用torch.nn.module建立，需要當作layer看待
-        loss_fn_name = 'FocalLoss'
-        loss = loss_fn.FocalLoss()(output, target)
-    elif args.loss_fn == 'lll':
-        loss_fn_name = 'lll'
-        loss = loss_fn.LogNLLLoss()(output, target)
-    elif args.loss_fn == 'diceloss':
-        loss_fn_name = 'diceloss'
-        loss = loss_fn.dice_loss(output, target)
-    elif args.loss_fn == 'clsiou':
-        loss_fn_name = 'clsiou'
-        loss = loss_fn.classwise_iou(output, target)
-    # print('----- loss_fn_name: ',loss_fn_name, '-----')
-    return loss
-def init_training_result_folder():
-    '''初始化並創建資料夾'''
-    path = './Model_Result'
-    files = os.listdir(path)
-    for file in files:
-        cur_path = os.path.join(path,file)
-        if os.path.isdir(cur_path):
-            shutil.rmtree(cur_path, onerror=remove_readonly)
-        else:
-            os.remove(cur_path)
-    if not os.path.exists('./Model_Result/log'):
-        os.makedirs('./Model_Result/log')
-    if not os.path.exists('./Model_Result/test_files'):
-        os.makedirs('./Model_Result/test_files')
-def save_model_mode(model, model_name):
-    '''
-    儲存model的模式設定：
-    # safe_mode == 0 代表儲存多個模型；safe_mode == 1 儲存單一模型。已棄用。
-
-    此區域上未完工！！
-    '''
-    # 儲存模型
-    save_name = model_name
-    torch.save(model.state_dict(), save_name)
-    print(f"1 epoch finish!!! {model_name} are saved!", sep='\t')
-def model_output_dim_adjust(model_output):
-    mo = model_output
-    ch, size = 2, args.imgsize # use 2 if MedT, use 1 if timm(ViT)
-    if mo.shape == (1, ch, size, size):
-        return mo
-    elif mo.dim() == 3:
-        assert len(mo) == ch
-        mo = mo.squeeze(0) # add batch dim
-        return mo
-    elif mo.dim() == 2:
-        assert len(mo) == 1 and len(mo[0]) != 0
-        mo = mo.view(1, 1, size, size)
-        return mo
-def deep_supervise(*feature, mask):
+# def choose_loss_fn(output, target):
+#     # 選擇使用的loss function。
+#     # 經過測試可以使用的(在MedT環境中)：weight_cross_entropy, dice_coef_loss,IoU,FocalLoss
+#     # validation階段調用
+#     if args.loss_fn == 'wce':
+#         # wce 可以接受channel=1的output
+#         loss_fn_name = 'wce'
+#         loss = loss_fn.weight_cross_entropy(output, target, wce_beta=args.wce_beta)
+#     elif args.loss_fn == 'bce':
+#         # wce 可以接受channel=1的output
+#         loss_fn_name = 'bce'
+#         loss = loss_fn.binary_cross_entropy(output, target, _2class=bool(args.classes-1))
+#     elif args.loss_fn == 'dice_coef_loss':
+#         loss_fn_name = 'dice_coef_loss'
+#         loss = loss_fn.dice_coef_loss(output, target)
+#     elif args.loss_fn == 'IoU':
+#         loss_fn_name = 'IoU'
+#         loss = loss_fn.IoU(output, target)
+#     elif args.loss_fn == 'FocalLoss':  # 這個criterion是用torch.nn.module建立，需要當作layer看待
+#         loss_fn_name = 'FocalLoss'
+#         loss = loss_fn.FocalLoss()(output, target)
+#     elif args.loss_fn == 'lll':
+#         loss_fn_name = 'lll'
+#         loss = loss_fn.LogNLLLoss()(output, target)
+#     elif args.loss_fn == 'diceloss':
+#         loss_fn_name = 'diceloss'
+#         loss = loss_fn.dice_loss(output, target)
+#     elif args.loss_fn == 'clsiou':
+#         loss_fn_name = 'clsiou'
+#         loss = loss_fn.classwise_iou(output, target)
+#     # print('----- loss_fn_name: ',loss_fn_name, '-----')
+#     return loss
+# def init_training_result_folder():
+#     '''初始化並創建資料夾'''
+#     path = './Model_Result'
+#     files = os.listdir(path)
+#     for file in files:
+#         cur_path = os.path.join(path,file)
+#         if os.path.isdir(cur_path):
+#             shutil.rmtree(cur_path, onerror=remove_readonly)
+#         else:
+#             os.remove(cur_path)
+#     if not os.path.exists('./Model_Result/log'):
+#         os.makedirs('./Model_Result/log')
+#     if not os.path.exists('./Model_Result/test_files'):
+#         os.makedirs('./Model_Result/test_files')
+# def save_model_mode(model, model_name):
+#     '''
+#     儲存model的模式設定：
+#     # safe_mode == 0 代表儲存多個模型；safe_mode == 1 儲存單一模型。已棄用。
+#
+#     此區域上未完工！！
+#     '''
+#     # 儲存模型
+#     save_name = model_name
+#     torch.save(model.state_dict(), save_name)
+#     print(f"1 epoch finish!!! {model_name} are saved!", sep='\t')
+def deep_supervise(*feature, mask, lossfn):
     '''
     feature: 輸入影像之特徵(tuple of tensor), Any size of feature.
         default (B,C,H,W): (8, 16, 32, 32)
@@ -296,14 +301,12 @@ def deep_supervise(*feature, mask):
         b,c,h,w = mask.shape
         f = f.to(args.device) if args.device == 'cuda:0' else f
         f = F.interpolate(f, size=(h,w), mode='bilinear', align_corners=True)
-        f_loss.append(choose_loss_fn(f, mask))
+        f_loss.append(lossfn(f, mask))
 
     f_loss = torch.mul(f_weight, torch.tensor(f_loss)).sum()
     return f_loss
 def parser_args(model_name):
-    parser = argparse.ArgumentParser(description='Transformer Test Version')
-    ds_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
-    vds_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
+    parser = argparse.ArgumentParser(description=' Version')
 
     'yaml test'
     parser.add_argument('--fname', type=str, help='name of config file to load', default=r'.\config\train_config.yaml')
@@ -323,7 +326,8 @@ def parser_args(model_name):
             yaml.dump(params, f)
         return params
 
-    fname = r'D:\Programming\AI&ML\model\config\train_config.yaml'
+    absFilePath = os.path.abspath(__file__)
+    fname = os.path.join(os.path.split(absFilePath)[0],'config/train_config.yaml')
     args = _process_main(fname)
     print(args['meta']['modelname'])
 
@@ -374,15 +378,14 @@ def parser_args(model_name):
                         help='是否是正式訓練(if not, train 8 iters for each epoch)')
     parser.add_argument('--direc', type=str, default=args['save']['direc'], help='directory to save')
     parser.add_argument('--savefig_resize', type=bool, default=args['save']['savefig_resize'], help='savefig resize')
-    # parser.add_argument('--savefig', default=False, type=bool, help='儲存影像的設定，目前沒有用到。需更改。')
 
     args = parser.parse_args()
 
     return args
 
 if __name__ == '__main__':
-    model_name = 'medt'
+    model_name = 'medt' # 棄用，無效變數
 
-    init_training_result_folder()
+    OU.init_training_result_folder()
     args = parser_args(model_name)
     main(args)

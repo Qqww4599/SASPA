@@ -18,22 +18,7 @@ param:
     test_image_input：傳入模型的原始影像位置，必須為絕對路徑
     mask：與test_image_input對應的mask檔愛位置，必須為絕對路徑
 '''
-
-
-
-# dataset_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset'
-# img_path = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_1.bmp'
-# img_path2 = r'../(Dataset)Gland Segmentation in Colon Histology Images Challenge/dataset/images/testA_2.bmp'
-
-def add_batch_dim(x):
-    '''增加batch維度，但目前沒作用'''
-    if x.ndim == 3:
-        return x
-    elif x.ndim == 4:
-        x = x.unsqueeze(0)
-        return x
-
-def THRESH_BINARY(x, th):
+def THRESH_BINARY_for_mask(x, th):
     '''影像二值化。輸入x為(H,W,C)的ndarray，th為閥值'''
     # print('THRESH_BINARY Input shape：',x.shape)
     if torch.is_tensor(x):
@@ -72,15 +57,6 @@ def THRESH_BINARY_for_pred(x, th):
     if th.ndim == 2:
         th = np.expand_dims(th, axis=2)
     return th
-
-# 不能隨便resize圖片會跑掉
-def read_image(path):
-    x = cv2.imread(path)
-    # print(f'{filesname}.shape:{x.shape}')
-    (B,G,R) = cv2.split(x)
-    x = torch.tensor(cv2.merge([R,G,B]))
-    return x
-
 def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     '''
     input：預期傳入圖片為3張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片+GT,格式為torch.tensor
@@ -93,19 +69,14 @@ def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     matplotlib.use('Agg') #不要顯示圖片
     original_image, pred, mask, *_ = image
     original_size = (original_size[0].item(),(original_size[1].item()))  # (H,W),use item() change tensor to int
-    # print(original_size)
-    # 影像二值化。image1表示原本影像，image2表示mask影像
-    # image1, image2 = THRESH_BINARY(image1,1), THRESH_BINARY(image2, 1)
-    # print('original_image.shape',original_image.shape) # torch.Size([1, 3, 256, 256])
-    # print('mask',mask.shape) # mask:torch.Size([1, 1, 256, 256])
-    # print('pred',pred.shape) # pred:torch.Size([1, 3, 256, 256])
+
     if pred.ndim == 4:
         pred = pred.squeeze(0) # 去掉batch維度
     if mask.ndim == 4:
         mask = mask.squeeze(0) # 去掉batch維度
     if original_image.ndim == 4:
         original_image = original_image.squeeze(0) # 去掉batch維度
-    pred, mask = pred.permute(1,2,0), THRESH_BINARY(mask, 1) # switch to H,W,C
+    pred, mask = pred.permute(1,2,0), THRESH_BINARY_for_mask(mask, 1) # switch to H,W,C
     original_image = original_image.permute(1,2,0)
 
     # ---- to torch tensor to numpy array ----
@@ -174,26 +145,12 @@ if __name__ == '__main__':
     # 測試影像的絕對路徑
     img_path1_n = r'D:\Programming\AI&ML\(Dataset)Gland Segmentation in Colon Histology Images Challenge\dataset\images\testA_1.bmp'
     img_path2_n = r'D:\Programming\AI&ML\(Dataset)Gland Segmentation in Colon Histology Images Challenge\dataset\masks\testA_1.bmp'
-    # print(img_path,img_path2,sep='\n')
-
+    def read_image(path):
+        '''------------只有單元測試會用到------------'''
+        x = cv2.imread(path)
+        # print(f'{filesname}.shape:{x.shape}')
+        (B, G, R) = cv2.split(x)
+        x = torch.tensor(cv2.merge([R, G, B]))
+        return x
     pre_process, post_process = read_image(img_path1_n), read_image(img_path2_n)
-    # Show_image(pre_process, post_process) # 模組化調度使用
-
-    # test_mask,test_image_input = load_image_mask(arg.test_image_input, arg.mask)
-    # Show_image(test_mask,test_image_input)
-
-    #用plt.imshow()顯示影像
-    # plt.subplot(1, 2, 1)  # 1*2的圖片 的 第1張
-    # plt.xticks([]),plt.yticks([])
-    # plt.axis('off')# 關閉座標刻度
-    # plt.title('pre_processing')
-    # plt.imshow(test_mask)
-    #
-    # plt.subplot(1, 2, 2)
-    # plt.xticks([]), plt.yticks([]) # 關閉座標刻度
-    # plt.axis('off')
-    # plt.title('post_processing')  # 1*2的圖片 的 第2張
-    # plt.imshow(test_image_input)
-    #
-    # plt.show()
 

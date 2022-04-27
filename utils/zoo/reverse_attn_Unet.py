@@ -3,13 +3,13 @@ import torchvision.models as models
 from torch import nn
 import pdb
 import torch.nn.functional as F
-from axialattn import AxialAttention
 import sys
+sys.path.append('.')
+from .axialattn import AxialAttention
 
 from collections import OrderedDict
 import json
 import subprocess
-import sys
 import time
 import xml.etree.ElementTree
 
@@ -106,7 +106,7 @@ class aggregation(nn.Module):
         super(aggregation, self).__init__()
         self.relu = nn.ReLU(True)
 
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        # self.upsample = nn.functional.upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.conv_upsample1 = BasicConv2d(channel, channel, 3, padding=1)
         self.conv_upsample2 = BasicConv2d(channel, channel, 3, padding=1)
         self.conv_upsample3 = BasicConv2d(channel, channel, 3, padding=1)
@@ -120,12 +120,16 @@ class aggregation(nn.Module):
 
     def forward(self, x1, x2):
         x1_1 = x1
-        x2_1 = self.conv_upsample1(self.upsample(x1)) * x2
+        x2_1 = self.conv_upsample1(
+            F.interpolate(x1, scale_factor=2, mode='bilinear', align_corners=True)
+        ) * x2
 
-        x2_2 = torch.cat((x2_1, self.conv_upsample4(self.upsample(x1_1))), 1)
+        x2_2 = torch.cat((x2_1, self.conv_upsample4(
+            F.interpolate(x1_1, scale_factor=2, mode='bilinear', align_corners=True)
+        )), 1)
         x2_2 = self.conv_concat2(x2_2)
 
-        x = F.interpolate(self.conv4(x2_2),scale_factor=(2,2),mode='bilinear')
+        x = F.interpolate(self.conv4(x2_2),scale_factor=(2,2),mode='bilinear', align_corners=True)
         x = self.conv5(x)
         # 1,64,64
         return x
@@ -183,6 +187,17 @@ class Reverse_attn_unet(nn.Module):
         self.ra2_conv3 = BasicConv2d(64, 64, kernel_size=3, padding=1)
         self.ra2_conv4 = BasicConv2d(64, 1, kernel_size=3, padding=1)
 
+        self.apply(self.weight_init)
+
+    @staticmethod
+    # Initialize weight method 初始化方法
+    def weight_init(m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+
     def forward(self,x):
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
@@ -200,9 +215,9 @@ class Reverse_attn_unet(nn.Module):
 
         ra5_feat = self.agg1(x4_rfb, x3_rfb)
         lateral_map_5 = F.interpolate(ra5_feat, scale_factor=8,
-                                      mode='bilinear')  # NOTES: Sup-1 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
+                                      mode='bilinear', align_corners=True)  # NOTES: Sup-1 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
         # ---- reverse attention branch_4 ----
-        crop_4 = F.interpolate(lateral_map_5, scale_factor=0.25, mode='bilinear')
+        crop_4 = F.interpolate(lateral_map_5, scale_factor=0.25, mode='bilinear', align_corners=True, recompute_scale_factor=True)
         x = -1 * (torch.sigmoid(crop_4)) + 1
         x = x.expand(-1, 2048, -1, -1)
         x = self.ra4_attn(x)
@@ -213,9 +228,9 @@ class Reverse_attn_unet(nn.Module):
         ra4_feat = self.ra4_conv5(x)
         x = ra4_feat + crop_4
         lateral_map_4 = F.interpolate(x, scale_factor=32,
-                                      mode='bilinear')  # NOTES: Sup-2 (bs, 1, 11, 11) -> (bs, 1, 352, 352)
+                                      mode='bilinear', align_corners=True)  # NOTES: Sup-2 (bs, 1, 11, 11) -> (bs, 1, 352, 352)
         # ---- reverse attention branch_3 ----
-        crop_3 = F.interpolate(x, scale_factor=2, mode='bilinear')
+        crop_3 = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
         x = -1 * (torch.sigmoid(crop_3)) + 1
         x = x.expand(-1, 1024, -1, -1)
         x = self.ra3_attn(x)
@@ -225,9 +240,9 @@ class Reverse_attn_unet(nn.Module):
         ra3_feat = self.ra3_conv4(x)
         x = ra3_feat + crop_3
         lateral_map_3 = F.interpolate(x, scale_factor=16,
-                                      mode='bilinear')  # NOTES: Sup-3 (bs, 1, 22, 22) -> (bs, 1, 352, 352)
+                                      mode='bilinear', align_corners=True)  # NOTES: Sup-3 (bs, 1, 22, 22) -> (bs, 1, 352, 352)
         # ---- reverse attention branch_2 ----
-        crop_2 = F.interpolate(x, scale_factor=2, mode='bilinear')
+        crop_2 = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
         x = -1 * (torch.sigmoid(crop_2)) + 1
         x = x.expand(-1, 512, -1, -1)
         x = self.ra2_attn(x)
@@ -237,7 +252,8 @@ class Reverse_attn_unet(nn.Module):
         ra2_feat = self.ra2_conv4(x)
         x = ra2_feat + crop_2
         lateral_map_2 = F.interpolate(x, scale_factor=8,
-                                      mode='bilinear')  # NOTES: Sup-4 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
+                                      mode='bilinear', align_corners=True)  # NOTES: Sup-4 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
+        return lateral_map_5
         return lateral_map_5, lateral_map_4, lateral_map_3, lateral_map_2
 
 
@@ -262,7 +278,5 @@ if __name__ == '__main__':
     import sys
     import time
     import xml.etree.ElementTree
-
-
 
     print(out[0].shape)
