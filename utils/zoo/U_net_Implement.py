@@ -3,7 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 
-'''code from https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py'''
+'''
+U-Net、R2U-Net、Attention U-Net、Attention R2U-Net實現方法
+
+code from https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py
+'''
 
 # init_weights應該不會用到。
 def init_weights(net, init_type='normal', gain=0.02):

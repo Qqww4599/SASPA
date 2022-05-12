@@ -10,6 +10,9 @@ import matplotlib.pyplot as plt
 import argparse
 import warnings
 import pdb
+import math
+from utils import Other_utils as OU
+
 '''
 此模組主要功能是「輸出模型切割效果和GT之間的差異」
 param:
@@ -18,6 +21,9 @@ param:
     test_image_input：傳入模型的原始影像位置，必須為絕對路徑
     mask：與test_image_input對應的mask檔愛位置，必須為絕對路徑
 '''
+def sigmoid(x):
+  return 1 / (1 + math.exp(-x))
+
 def THRESH_BINARY_for_mask(x, th):
     '''影像二值化。輸入x為(H,W,C)的ndarray，th為閥值'''
     # print('THRESH_BINARY Input shape：',x.shape)
@@ -37,27 +43,30 @@ def THRESH_BINARY_for_mask(x, th):
     ret, th = cv2.threshold(x*255, th, 255, cv2.THRESH_BINARY_INV)
     return th
 
-def THRESH_BINARY_for_pred(x, th):
+def THRESH_BINARY_for_pred(x, th=85):
     if torch.is_tensor(x):
         # print('Input shape：', x.shape)
         x = torch.sigmoid(x)
         x = x.numpy()
-    x = x*255
-    x = x.astype(np.uint8)
-    # print('Input shape：', x.shape) # Input shape： (512, 512)
-    # print('Input：', x)
-    # ret, th = cv2.threshold(x * 255, th, 255, cv2.THRESH_BINARY_INV)
-
-    # 用全局自適應(Otsu’s二值化)
+    else:
+        x = x
+    x = cv2.normalize(x, None, 0, 255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
+    # x = x.astype(np.uint8)
+    # img = x[:, :, -1]
+    img = x[:, :]
+    # ========== 用全局自適應(Otsu’s二值化) =============
     # ret, th = cv2.threshold(x[:,:,-1], th, 255, cv2.THRESH_OTSU)
-    img = x[:, :, -1]
-    img = cv2.medianBlur(img, 5)
-    th = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 255, 2)
-
+    # img = cv2.medianBlur(img, 5)
+    # th = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 255, 2)
+    # ==============================================
+    # 指定閥值二值化(th=0.333)
+    th = (img > th).astype(np.float)
+    # ==============================
     if th.ndim == 2:
-        th = np.expand_dims(th, axis=2)
+        pass
+        # th = np.expand_dims(th, axis=2)
     return th
-def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
+def Save_image(*image,save_path,original_size, channel=2, resize=True):
     '''
     input：預期傳入圖片為3張(未來可能會推廣到更多張顯示)，處理前的圖片+處理後的圖片+GT,格式為torch.tensor
     input size to be (B,C,H,W)
@@ -77,47 +86,56 @@ def Save_image(*image,save_path,original_size, channel=2, th=30, resize=True):
     if original_image.ndim == 4:
         original_image = original_image.squeeze(0) # 去掉batch維度
     pred, mask = pred.permute(1,2,0), THRESH_BINARY_for_mask(mask, 1) # switch to H,W,C
+    # 自適應二值化
+    bi_pred = THRESH_BINARY_for_pred(pred)
+
     original_image = original_image.permute(1,2,0)
 
     # ---- to torch tensor to numpy array ----
-    original_image = original_image.numpy()
-    pred = pred.numpy()
-    pred_binary = pred.transpose(2,0,1)
+    original_image = original_image.numpy() if torch.is_tensor(pred) else original_image
+    bi_pred = bi_pred.numpy() if torch.is_tensor(bi_pred) else bi_pred
+    # bi_pred = bi_pred.transpose(2,0,1)
     # ---- resize to original size ----
     if resize:
         original_image = cv2.resize(original_image,original_size,interpolation=cv2.INTER_NEAREST)
         pred = cv2.resize(pred,original_size,interpolation=cv2.INTER_NEAREST)
-        pred_binary = cv2.resize(pred_binary,original_size,interpolation=cv2.INTER_NEAREST)
+        bi_pred = cv2.resize(bi_pred,original_size,interpolation=cv2.INTER_NEAREST)
         mask = cv2.resize(mask, original_size, interpolation=cv2.INTER_NEAREST)
         # print(pred.shape) # H,W,C
     if channel == 2:
-        pred = pred[:,:,1]
+        pred = pred[:,:,-1]
     # 用plt.imshow()顯示影像，用plt.imshow()傳入影像必須為C,H,W
-    plt.subplot(2, 2, 1)
+    fig = plt.figure()
+
+    fig.add_subplot(2,2,1)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
     plt.axis('off')
     plt.title('original')  # 1*3的圖片 的 第1張
     plt.imshow(original_image)
 
-    plt.subplot(2, 2, 3)  # 1*3的圖片 的 第2張
+    fig.add_subplot(2, 2, 3)
     plt.xticks([]), plt.yticks([])
     plt.axis('off')  # 關閉座標刻度
     plt.title('model pred')
     plt.imshow(pred)
 
-    plt.subplot(2, 2, 2)
+    fig.add_subplot(2, 2, 2)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
     plt.axis('off')
     plt.title('Ground Truth')  # 1*23的圖片 的 第3張
-    plt.imshow(mask)
+    plt.imshow(original_image, alpha=0.5)
+    plt.imshow(mask, alpha=0.5)
 
-    plt.subplot(2, 2, 4)
+    fig.add_subplot(2, 2, 4)
     plt.xticks([]), plt.yticks([])  # 關閉座標刻度
     plt.axis('off')
     plt.title('pred binary')  # 1*23的圖片 的 第3張
-    plt.imshow(pred_binary[0])
+    plt.imshow(original_image, alpha=0.5)
+    plt.imshow(bi_pred, alpha=0.5)
 
     plt.savefig(save_path)
+    plt.clf()
+    plt.close('all')
 
 if __name__ == '__main__':
     # 輸入圖像位置

@@ -38,7 +38,6 @@ def Binarization(x, th):
     x[x>=th] = 1
     x[x<th] = 0
     return x
-
 def scaling(x):
     max = x.max()
     min = x.min()
@@ -46,7 +45,6 @@ def scaling(x):
     if dist == 0:
         return x
     return (x - min) / dist
-
 class FocalLoss(torch.nn.Module):
     def __init__(self, gamma=0, alpha=None, size_average=True):
         super(FocalLoss, self).__init__()
@@ -84,11 +82,9 @@ class FocalLoss(torch.nn.Module):
             return loss.mean()
         else:
             return loss.sum()
-
 def sigmoid_scaling(x):
     x = torch.sigmoid(x) # 用torch內建方法
     return x
-
 def dice_coef_loss(y_true, y_pred):
     '''就是Diceloss的算法'''
     def dice_coef(y_true, y_pred, smooth=1):
@@ -104,7 +100,6 @@ def dice_coef_loss(y_true, y_pred):
     out = out.sum() / len(y_true)
     # print(out, out.grad, sep='\t')
     return out
-
 def Accuracy(predict, target):
     '''
     -------------------Accuracy TEST-------------------
@@ -128,7 +123,6 @@ def Accuracy(predict, target):
         acc += (TP + TN) / (TP + FP + FN + TN)
         dice_c += (2 * TP + 1e-16) / (torch.sum(predict == cls) + torch.sum(target == cls) +1e-16)
     return acc / (classes+1), dice_c / (classes+1)
-
 class DiceLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceLoss, self).__init__()
@@ -145,7 +139,6 @@ class DiceLoss(nn.Module):
         dice = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
 
         return 1 - dice
-
 def dice_loss(target, predictive, ep=1e-8):
     '''
     陳中銘老師推薦的指標
@@ -154,7 +147,6 @@ def dice_loss(target, predictive, ep=1e-8):
     union = torch.sum(predictive) + torch.sum(target) + ep
     loss = 1 - intersection / union
     return loss
-
 def weight_cross_entropy(output, target, wce_beta):
     '''
 
@@ -199,7 +191,6 @@ def weight_cross_entropy(output, target, wce_beta):
     loss = torch.sum(loss, axis=0)
     loss = torch.mean(loss)
     return loss
-
 class LogNLLLoss(_WeightedLoss):
     '''
     來自MedT metrics.py
@@ -227,7 +218,21 @@ class LogNLLLoss(_WeightedLoss):
         # y_input = torch.log(y_input + np.finfo(np.float32).eps)
         return cross_entropy(y_input.float(), y_target.long(), weight=self.weight,
                              ignore_index=self.ignore_index)
-
+def NLLLoss(x ,target, _2class=True):
+    def f_2class(mask, dim=1):
+        '''
+        return
+            mask背景層 = mask[:,1,:,:]
+            mask病灶層 = mask[:,0,:,:]
+            mask.shape = (b,2,h,w)
+            background is last channel!!!!!!!!
+        '''
+        bg_mask = torch.as_tensor((mask) == 0, dtype=torch.int32)
+        mask = torch.cat((mask, bg_mask), dim=dim)
+        return mask
+    if _2class and x.shape[1] != 1:
+        target = f_2class(target, dim=1) # (b,2,h,w)
+    torch.nn.NLLLoss(x ,target.long())
 def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
     '''IoU
     y_pred:(b,2,h,w)
@@ -247,7 +252,6 @@ def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
     output = (intersection + eps) / (union + eps)
     output = torch.max(output)
     return output
-
 def classwise_iou(output, gt):
     """
     來自MedT metrics.py
@@ -272,7 +276,6 @@ def classwise_iou(output, gt):
         iou_loss = iou_loss.sum() / len(iou_loss)
 
     return iou_loss
-
 def classwise_f1(output, gt, threshold=0.333, testing=False):
     """
     來自MedT metrics.py
@@ -316,7 +319,6 @@ def classwise_f1(output, gt, threshold=0.333, testing=False):
     if not len(classwise_f1) == 1:
         classwise_f1 = classwise_f1.sum() / len(classwise_f1)
     return classwise_f1
-
 def binary_cross_entropy(x, target, _2class=False):
     '''
     input :
@@ -391,7 +393,7 @@ if __name__ == '__main__':
             #     yaml.dump(params, f)
             return params
 
-        fname = r'D:\Programming\AI&ML\model\config\loss_config.yaml'
+        fname = r'D:\Programming\AI&ML\MainResearch\config\loss_config.yaml'
         args = _process_main(fname)
         print(args['meta']['modelname'])
 

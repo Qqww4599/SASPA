@@ -1,16 +1,11 @@
 import torch
 import torchvision.models as models
 from torch import nn
-import pdb
 import torch.nn.functional as F
 import sys
-sys.path.append('.')
-from .axialattn import AxialAttention
+sys.path.append('../..')
+from MainResearch.utils.zoo.Test_models.Reverse_AttentionUNet.axialattn import AxialAttention
 
-from collections import OrderedDict
-import json
-import subprocess
-import time
 import xml.etree.ElementTree
 
 
@@ -253,7 +248,6 @@ class Reverse_attn_unet(nn.Module):
         x = ra2_feat + crop_2
         lateral_map_2 = F.interpolate(x, scale_factor=8,
                                       mode='bilinear', align_corners=True)  # NOTES: Sup-4 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
-        return lateral_map_5
         return lateral_map_5, lateral_map_4, lateral_map_3, lateral_map_2
 
 
@@ -273,7 +267,6 @@ if __name__ == '__main__':
     out = ras(a.to('cuda'))
 
     from collections import OrderedDict
-    import json
     import subprocess
     import sys
     import time

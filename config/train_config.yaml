@@ -1,7 +1,7 @@
 criterion:
-  loss: diceloss
+  loss: bce
   scheduler: ReduceLROnPlateau
-  optimizer: adam
+  optimizer: adamw
 data:
   ds_path: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT
   val_dataset: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2
@@ -13,24 +13,25 @@ data:
 logging:
   folder: .\config
 meta:
-  Name: Local branch ver1.1 with diceloss, one class
-  modelname: TEST
+  Name: Test U just test
+  modelname: Test U
   use_autocast: 0
   device: cuda:0
 optimization:
-  epochs: 100
+  epochs: 200
   batchsize: 8
-  lr: 0.001
+  lr: 0.0005
   weight_decay: 1e-5
-  train_accumulation_steps: 4
+  train_accumulation_steps: 1
   k_fold: 5
   deep_supervise: false
   pos: false
 save:
-  save_frequency: 25
+  save_frequency: 5
+  save_valid_img: True
   save_state_dict: True
   savemodel: True
   run_formal: True
-  direc: ./Model_Result
+  direc: .\TotalResult_HAND\20220512\Test U just test
   savefig_resize: False
   threshold: 0.333

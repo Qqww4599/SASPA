@@ -488,15 +488,15 @@ class ResAxialAttentionUNet(nn.Module):
         # print(x3.shape)
         x4 = self.layer4(x3)
 
-        x = F.relu(F.interpolate(self.decoder1(x4), scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder1(x4), scale_factor=(2,2), mode ='bilinear', align_corners=True))
         x = torch.add(x, x4)
-        x = F.relu(F.interpolate(self.decoder2(x) , scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder2(x) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
         x = torch.add(x, x3)
-        x = F.relu(F.interpolate(self.decoder3(x) , scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder3(x) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
         x = torch.add(x, x2)
-        x = F.relu(F.interpolate(self.decoder4(x) , scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder4(x) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
         x = torch.add(x, x1)
-        x = F.relu(F.interpolate(self.decoder5(x) , scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder5(x) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
         x = self.adjust(F.relu(x))
         # print('output shape:',x.shape) # (1,2,256,256)
         # pdb.set_trace()
@@ -652,9 +652,9 @@ class medt_net(nn.Module):
         # x = torch.add(x, x3)
         # x = F.relu(F.interpolate(self.decoder3(x3) , scale_factor=(2,2), mode ='bilinear'))
         # x = torch.add(x, x2)
-        x = F.relu(F.interpolate(self.decoder4(x2) , scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder4(x2) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
         x = torch.add(x, x1)
-        x = F.relu(F.interpolate(self.decoder5(x) , scale_factor=(2,2), mode ='bilinear'))
+        x = F.relu(F.interpolate(self.decoder5(x) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
         # print(x.shape)
         
         # end of full image training 
@@ -693,15 +693,15 @@ class medt_net(nn.Module):
                 # # print(x3.shape)
                 x4_p = self.layer4_p(x3_p)
                 
-                x_p = F.relu(F.interpolate(self.decoder1_p(x4_p), scale_factor=(2,2), mode ='bilinear'))
+                x_p = F.relu(F.interpolate(self.decoder1_p(x4_p), scale_factor=(2,2), mode ='bilinear', align_corners=True))
                 x_p = torch.add(x_p, x4_p)
-                x_p = F.relu(F.interpolate(self.decoder2_p(x_p) , scale_factor=(2,2), mode ='bilinear'))
+                x_p = F.relu(F.interpolate(self.decoder2_p(x_p) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
                 x_p = torch.add(x_p, x3_p)
-                x_p = F.relu(F.interpolate(self.decoder3_p(x_p) , scale_factor=(2,2), mode ='bilinear'))
+                x_p = F.relu(F.interpolate(self.decoder3_p(x_p) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
                 x_p = torch.add(x_p, x2_p)
-                x_p = F.relu(F.interpolate(self.decoder4_p(x_p) , scale_factor=(2,2), mode ='bilinear'))
+                x_p = F.relu(F.interpolate(self.decoder4_p(x_p) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
                 x_p = torch.add(x_p, x1_p)
-                x_p = F.relu(F.interpolate(self.decoder5_p(x_p) , scale_factor=(2,2), mode ='bilinear'))
+                x_p = F.relu(F.interpolate(self.decoder5_p(x_p) , scale_factor=(2,2), mode ='bilinear', align_corners=True))
                 # print(x_p.shape)
                 # x_loc[:,:,32*i:32*(i+1),32*j:32*(j+1)] = x_p
                 x_loc[:,:,h*i:h*(i+1),w*j:w*(j+1)] = x_p
@@ -719,8 +719,8 @@ class medt_net(nn.Module):
         return self._forward_impl(x)
 
 
-def axialunet(pretrained=False, **kwargs):
-    model = ResAxialAttentionUNet(AxialBlock, [1, 2, 4, 1], s= 0.125, **kwargs)
+def axialunet(args, pretrained=False, **kwargs):
+    model = ResAxialAttentionUNet(AxialBlock, [1, 2, 4, 1], imgchan=args.imgchan, img_size=args.imgsize, num_classes=args.classes, s= 0.125, **kwargs)
     return model
 
 def gated(args, pretrained=False, **kwargs):
@@ -728,11 +728,11 @@ def gated(args, pretrained=False, **kwargs):
     return model
 
 def MedT(args,pretrained=False, **kwargs):
-    model = medt_net(AxialBlock_dynamic,AxialBlock_wopos, [1, 2, 4, 1], img_size=args.imgsize, num_classes=args.classes, s= 0.125,  **kwargs)
+    model = medt_net(AxialBlock_dynamic,AxialBlock_wopos, [1, 2, 4, 1], imgchan=args.imgchan, img_size=args.imgsize, num_classes=args.classes, s= 0.125,  **kwargs)
     return model
 
 def logo(args, pretrained=False, **kwargs):
-    model = medt_net(AxialBlock,AxialBlock, [1, 2, 4, 1], img_size=args.imgsize, num_classes=args.imgchan, s= 0.125, **kwargs)
+    model = medt_net(AxialBlock,AxialBlock, [1, 2, 4, 1], imgchan=args.imgchan, img_size=args.imgsize, num_classes=args.imgchan, s= 0.125, **kwargs)
     return model
 
 # EOF

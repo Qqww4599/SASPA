@@ -128,7 +128,7 @@ class ImageToImage2D(Dataset):
         one_hot_mask: bool, if True, returns the mask in one-hot encoded form.
     """
 
-    def __init__(self, dataset_path: str, joint_transform: Callable = None, one_hot_mask: int = False,
+    def __init__(self, dataset_path: str, joint_transform: Callable = None, Gray=False,
                  merge_train:bool=True, img_size=(256,256), get_catagory=None, only_positive=True) -> None:
         '''
         path example:"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new"
@@ -140,7 +140,7 @@ class ImageToImage2D(Dataset):
         # 如果只要訓練有腫瘤部分，需要再另外把範圍縮小到只有benign,malignant
         self.img_size = img_size
         self.dataset_path = dataset_path
-        self.one_hot_mask = one_hot_mask
+        self.gray = Gray
         self.get_catagory = get_catagory
         self.img_catagory = None
         if joint_transform:
@@ -175,7 +175,7 @@ class ImageToImage2D(Dataset):
                         for mask in os.listdir(folder_path):
                             # 直接加入masks路徑
                             self.masks_list.append(os.path.join(folder_path, mask))
-            print(f'There are {len(self.images_list)} images')
+            print(f'Training on {len(self.images_list)} images, categories is {self.get_catagory}')
 
         else:
             self.input_path = os.path.join(dataset_path, 'images')
@@ -188,28 +188,25 @@ class ImageToImage2D(Dataset):
 
     def __getitem__(self, idx):
         images_path, masks_path = self.images_list[idx], self.masks_list[idx]
-        # read image
-        image = cv2.imread(images_path)
+        # read image (choose RGB 3 channel or Gray 1 channel)
+        image = cv2.imread(images_path) if not self.gray else cv2.imread(images_path, 0)
         mask = cv2.imread(masks_path, 0)
         mask[mask <= 127] = 0
         mask[mask > 127] = 1
         # correct dimensions if needed
         image, mask = correct_dims(image, mask)
-        # print(image.shape, mask.shape)
-
-        if self.one_hot_mask:
-            assert self.one_hot_mask > 0, 'one_hot_mask must be nonnegative'
-            mask = torch.zeros((self.one_hot_mask, mask.shape[1], mask.shape[2])).scatter_(0, mask.long(), 1)
         if self.joint_transform:
             # 原來一直都有呼叫這個函式但是我不知道= =，目前沒被賦予功能。
             image, mask = self.joint_transform(image, mask)
 
-        image, mask = image.permute(2,1,0).numpy(), mask.permute(2,1,0).numpy()
+        # image, mask = image.permute(1,2,0).numpy(), mask.permute(1,2,0).numpy()
+        image, mask = image.permute(1,2,0).numpy(), mask.permute(1,2,0).numpy()
 
         image = cv2.resize(image, self.img_size)
         mask = cv2.resize(mask, self.img_size)
 
-        image = np.transpose(image,(2,0,1))
+        # 注意：20220504以前訓練的影像都是左轉90度的，以後都改正面訓練
+        image = np.expand_dims(image,axis=0) if image.ndim == 2 else np.transpose(image,(2,0,1))
         mask = np.expand_dims(mask,axis=0)
 
         mask[mask != 0] = 1
@@ -235,13 +232,13 @@ class Image2D(DataLoader):
                   |-- img002.png
                   |-- ...
     '''
-    def __init__(self, dataset_path, img_size=(256,256),single_ch=False):
+    def __init__(self, dataset_path, img_size=(256,256),Gray=False):
         # ========記得調整影像大小!!!!!!!!!!!!!======
         self.img_size = img_size
         self.dataset_path = dataset_path
         self.images_path = os.path.join(self.dataset_path, 'images')
         self.masks_path = os.path.join(self.dataset_path, 'masks')
-        self.single_ch = single_ch
+        self.gray = Gray
         self.images_list = os.listdir(self.images_path) # val影像檔案名稱列表
         self.masks_list = os.listdir(self.masks_path) # val GT影像檔案名稱列表
     def __len__(self):
@@ -251,12 +248,13 @@ class Image2D(DataLoader):
     def __getitem__(self, index):
         image_path = os.path.join(self.dataset_path,'images',self.images_list[index])
         mask_path = os.path.join(self.dataset_path,'masks',self.masks_list[index])
-        image, mask = cv2.imread(image_path), cv2.imread(mask_path,0)
-        original_size = (len(image[:,1,1]),len(image[1,:,1])) # H,W,C 取 (H,W)tuple
+        image = cv2.imread(image_path) if not self.gray else cv2.imread(image_path, 0)
+        mask = cv2.imread(mask_path,0)
+
         image = cv2.resize(image,self.img_size,interpolation=cv2.INTER_NEAREST)
         mask = cv2.resize(mask,self.img_size, interpolation=cv2.INTER_NEAREST)
         # resize完後改回原本model能接受的尺寸(B,C,H,W)
-        image = np.transpose(image/255.0,(2,0,1)) # 歸一化
+        image = np.expand_dims(image,axis=0) if image.ndim == 2 else np.transpose(image/255.0,(2,0,1)) # 歸一化
         mask = np.expand_dims(mask,axis=0)
         image, mask = torch.tensor(image,dtype=torch.float32), torch.tensor(mask, dtype=torch.float32)
 
@@ -289,6 +287,7 @@ if __name__ == '__main__':
     import numpy as np
     import matplotlib.pyplot as plt
     import torch
+    import sys
     #
     #
     dataset_path = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_dataset"
@@ -296,12 +295,21 @@ if __name__ == '__main__':
     save_path = r'./model/Model_Result/'
     # train_tf = JointTransform2D(crop=(32,32), color_jitter_params=None)
     # dataset = DataLoader(ImageToImage2D(dataset_path_train,joint_transform=train_tf))
-    dataset = DataLoader(ImageToImage2D(dataset_path_train, get_catagory=True))
+    dataset = DataLoader(ImageToImage2D(dataset_path_train, get_catagory=True, Gray=True))
+    v_dataset = DataLoader(Image2D(dataset_path, img_size=(128,128), Gray=True))
+    for i, (image, mask) in enumerate(v_dataset):
+        if i == 1:
+            break
+        # print(image.shape, mask.shape, sep='\n')
+        if image.ndim or mask.ndim == 4:
+            image, mask = image.reshape(*image.shape), mask.reshape(*mask.shape)# 去掉batch維度
+            print(image.shape, mask.shape, sep='\n')
+    sys.exit()
     for i, (image, mask, catagory) in enumerate(dataset):
         if i == 1:
             break
         # print(image.shape, mask.shape, sep='\n')
         print(f'catagory is: {catagory}')
         if image.ndim or mask.ndim == 4:
-            image, mask = image.squeeze(0), mask.squeeze(0)# 去掉batch維度
+            image, mask = image.reshape(*image.shape), mask.reshape(*mask.shape)# 去掉batch維度
             print(image.shape, mask.shape, sep='\n')

@@ -3,15 +3,15 @@ import shutil
 import torch
 import cv2
 import numpy as np
+import sys
 
 def remove_readonly(func, path, _):
     "Clear the readonly bit and reattempt the removal"
     os.chmod(path, stat.S_IWRITE)
     func(path)
 
-def init_training_result_folder():
+def init_training_result_folder(path):
     '''初始化並創建資料夾'''
-    path = './Model_Result'
     files = os.listdir(path)
     for file in files:
         cur_path = os.path.join(path,file)
@@ -19,10 +19,10 @@ def init_training_result_folder():
             shutil.rmtree(cur_path, onerror=remove_readonly)
         else:
             os.remove(cur_path)
-    if not os.path.exists('./Model_Result/log'):
-        os.makedirs('./Model_Result/log')
-    if not os.path.exists('./Model_Result/test_files'):
-        os.makedirs('./Model_Result/test_files')
+    if not os.path.exists(f'{path}/log'):
+        os.makedirs(f'{path}/log')
+    if not os.path.exists(f'{path}/test_files'):
+        os.makedirs(f'{path}/test_files')
 
 def save_model_mode(model, model_name):
     '''
@@ -67,3 +67,27 @@ def THRESH_BINARY_for_pred(x, return_tensor=False):
         x = np.expand_dims(x, axis=0)
         return torch.tensor(x)
     return x
+
+def Double_check_training_setting():
+    reject_choices = {'no','n',}
+    direc_check = input('確認儲存路徑是否正確(Y/N)?').lower()
+    if 'n' in direc_check:
+        print('再次確認並重新開始測試')
+        sys.exit()
+    model_check = input('確認模型是否正確(Y/N)?').lower()
+    if 'n' in model_check:
+        print('再次確認並重新開始測試')
+        sys.exit()
+    loss_check = input('確認loss函數設定是否正確(Y/N)?').lower()
+    if 'n' in loss_check:
+        print('再次確認並重新開始測試')
+        sys.exit()
+    meta_check = input('確認config meta是否正確設定，確認save valid fig、imgchan、epoch是否正確設定(Y/N)?').lower()
+    if 'n' in meta_check:
+        print('再次確認並重新開始測試')
+        sys.exit()
+    return None
+
+
+if __name__ == '__main__':
+    Double_check_training_setting()
