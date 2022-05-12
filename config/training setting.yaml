@@ -1,0 +1,33 @@
+criterion:
+  loss: bce
+  optimizer: adam
+  scheduler: ReduceLROnPlateau
+data:
+  catagory: None
+  classes: 1
+  dataset: BreastUS
+  ds_path: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT
+  imgchan: 3
+  imgsize: 128
+  val_dataset: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2
+logging:
+  folder: .\config
+meta:
+  device: cuda:0
+  modelname: TEST
+  use_autocast: 0
+optimization:
+  batchsize: 1
+  epochs: 100
+  k_fold: 5
+  lr: 0.001
+  train_accumulation_steps: 4
+  weight_decay: 1e-5
+save:
+  direc: ./Model_Result
+  run_formal: false
+  save_frequency: 0
+  save_state_dict: true
+  savefig_resize: false
+  savemodel: false
+  threshold: 0.333

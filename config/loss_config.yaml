@@ -1,0 +1,43 @@
+criterion:
+  loss: NLLLoss
+  scheduler: ReduceLROnPlateau
+  optimizer: adamw
+
+
+data:
+  ds_path: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT
+  val_dataset: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2
+  imgsize: 128
+  imgchan: 3
+  classes: 1
+  catagory: null
+  dataset: BreastUS
+
+logging:
+  folder: .\config
+
+meta:
+  Name: segformer basic. With BCE, adamw
+  modelname: segformer
+  use_autocast: 0
+  device: cuda:0
+  training: False
+
+optimization:
+  epochs: 100
+  batchsize: 8
+  lr: 0.001
+  weight_decay: 1e-5
+  train_accumulation_steps: 4
+  k_fold: 5
+  deep_supervise: False
+
+save:
+  save_frequency: 10
+  save_state_dict: True
+  savemodel: False
+  run_formal: False
+  direc: ./Trashes
+  savefig_resize: False
+  threshold: 0.333
+  model_state: D:\Programming\AI&ML\model\TotalResult_HAND\20220223\test1\best_model.pth
