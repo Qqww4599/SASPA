@@ -18,8 +18,9 @@ import torch.nn.functional as F
 import time
 from sklearn import metrics
 import yaml
-
+from ptflops import get_model_complexity_info
 import argparse
+
 '''
 主要測試model使用的檔案
 
@@ -39,6 +40,7 @@ import argparse
     save_pred_binary: 是否直接儲存二值化影像
 
 本實驗之測試目標：
+    
     1. F1 score
     2. mIoU (mean In different classes)
     3. Dice (mean In different classes)
@@ -55,6 +57,13 @@ import argparse
 binarization_th = 111 進行二值化之閥值
 binarization = 0 是否進行二值化
 '''
+'內部資料測試：'\
+r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\InterTEST"
+'外部資料測試：'\
+r"D:\Programming\AI&ML\(Dataset)STU-Hospital"
+'快速資料測試：' \
+r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_opt"
+
 reject = {'null', 'Null', 'No', 'no', 'n', '0', 'None', 'none', 'False'}
 
 def args_parser(n_fold):
@@ -166,7 +175,7 @@ class test_dataloader(DataLoader):
         image = cv2.resize(image, (self.imgsize,self.imgsize), interpolation=cv2.INTER_NEAREST)
         # 輸入影像值為[0-1]之間，不然輸出結果會異常
         image = np.transpose(image, (2, 0, 1)) / 255.
-        # image = np.transpose(image, (2, 1, 0)) / 255. # TEST
+        # image = np.transpose(image, (2, 1, 0)) / 255. # TEST，之前測試輸出影像方向錯誤之改正方法
         # print('Test dataset size：', image.shape,sep='\n')
         # 回傳沒有經過資料增量的影像+原圖尺寸(tuple)
         img_out = torch.tensor(image).to(self.device).to(torch.float32)
@@ -179,15 +188,13 @@ class test_dataloader(DataLoader):
             mask = mask / 255
             mask_out = torch.tensor(mask).to(self.device).to(torch.int)
             mask_out = mask_out.view(1, *mask_out.shape) # to match metrics fn
-            # mask_out = mask_out.reshape(1, *mask_out).permute(0,2,1) # TEST
+            # mask_out = mask_out.view(1, *mask_out.shape).permute(0,2,1) # TEST，之前測試輸出影像方向錯誤之改正方法
 
         return img_out, mask_out, (original_img_size,original_mask_size)
 def calculate(model_out, mask):
     '''注意輸入的影像數值是否為[0,255]'''
     iou = IoU(model_out, mask.cuda())
     f1_s = classwise_f1(model_out, mask.cuda(), testing=True)  # 這邊有用
-    # m_dice = DiceLoss()
-    # Dice = 1 - dice_loss(mask, model_out // 255, )
     Dice = 1 - dice_loss(mask, model_out, )
     return f1_s.cpu().detach().numpy().astype(float), iou.cpu().detach().numpy(), Dice.cpu().detach().numpy()
 def adaptiveThreshold(img):
@@ -200,6 +207,9 @@ def adaptiveThreshold(img):
     return th1,th2
 def appointed_threshold(pred, th=0.333):
     '指定數值之二值化方法'
+    # 輸出影像未經過標準化，此處為標準化程序
+    th = pred.max()*th - pred.min() * (th - 1)
+
     pred = pred[:,-1,]
     pred = (pred > th).float()
     return pred
@@ -219,8 +229,10 @@ def main(n_fold):
     # 載入模型
     model = Use_model(args)
     model.load_state_dict(torch.load(args.model_path)) # 載入權重
+    model.eval()
     f1_final, iou_final, Dice_final, AUC_final = 0., 0., 0., 0.
     infer_time = 0
+    macs, params = get_model_complexity_info(model, (3, 128, 128), as_strings=True, print_per_layer_stat=False, verbose=False)
 
     for i, (image ,mask, size) in enumerate(dataloader):
         assert type(image) == torch.Tensor, f'correct type is torch.Tensor, now is {type(image)}'
@@ -231,7 +243,6 @@ def main(n_fold):
         infer_time += time.time() - time_start
         if args.scale:
             pred = sigmoid_scaling(pred) # 使用sigmoid歸一化
-
         # 二值化----指定threshold值
         gussan_th = appointed_threshold(pred).reshape(128,128).cpu().clone().detach()
         # 自適應二值化
@@ -307,15 +318,17 @@ def main(n_fold):
 
     # Log writer 記錄測試紀錄
     with open(args.log_file_path, 'w') as L:
+        n = i
+        L.write(f'Record time: {time.asctime()}\n\n')
         L.write(f'Test name: {args.Test_name}\n\n')
         L.write(f'Model name: {args.modelname}\n\n')
-        L.write(f'Parameters: {None}\n\n')
+        L.write(f'Parameters: {params}\nComputational complexity: {macs}\n\n')
         L.write(f'=========== Result ============\n\n')
-        L.write(f'Mean F1 score (ON TEST DATA): {f1_final/(i+1)}\n\n')
-        L.write(f'Mean mIoU  (ON TEST DATA): {iou_final/(i+1)}\n\n')
-        L.write(f'Mean Dice  (ON TEST DATA): {Dice_final/(i+1)}\n\n')
-        L.write(f'Mean AUC  (ON TEST DATA): {AUC_final/(i+1)}\n\n')
-        L.write(f'Avg inferance time: {infer_time/(i+1)}\n\n')
+        L.write(f'Mean F1 score (ON TEST DATA): \n{f1_final.__float__()/(n+1)}\n\n')
+        L.write(f'Mean mIoU  (ON TEST DATA): \n{iou_final/(i+1)}\n\n')
+        L.write(f'Mean Dice  (ON TEST DATA): \n{Dice_final/(i+1)}\n\n')
+        L.write(f'Mean AUC  (ON TEST DATA): \n{AUC_final/(i+1)}\n\n')
+        L.write(f'Avg inferance time: \n{infer_time/(i+1)}\n\n')
         L.close()
 
 

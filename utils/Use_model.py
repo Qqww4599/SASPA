@@ -1,11 +1,13 @@
 import argparse
 import sys
+sys.path.append(r'D:\Programming\AI&ML\MainResearch\utils\zoo')
 import torch
 import timm
 import segmentation_models_pytorch as smp
 import torch.optim.lr_scheduler as scheduler
+from ptflops import get_model_complexity_info
 
-__name__ = []
+# __name__ = []
 
 def Use_model(args):
     '''
@@ -63,24 +65,21 @@ def Use_model(args):
     elif model_name == '20220423 test1':
         from .zoo.MedT_Global_ResNet0423 import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)
+    # elif model_name == 'ResAttnModule Unet':
+    #     from .zoo.Test_models.ResNet_other_architechture.model import ResAttnModule_Unet_model
+    #     model = ResAttnModule_Unet_model(args)
+    elif 'ResAttnModule' in model_name or 'TransFPN_Module' in model_name:
+        from .zoo.Test_models.ResNet_other_architechture import get_model
+        model = get_model(args)
 
     # --------------------測試新model使用------------------------
     # elif model_name == 'TEST':
     #     # from model.utils.zoo.Test_models.MedT_global_branch_ver1_1.model import medt
     #     from .zoo.Test_models.MedT_global_branch_ver1_1.model import medt
     #     model = medt(args)
-    elif model_name == 'transcycle10':
-        from .zoo.Test_models.TransCycle_model.TransCycle_model_10 import model
-        model = model(args)
-    elif model_name == 'transcycle20':
-        from .zoo.Test_models.TransCycle_model.TransCycle_model_20 import model
-        model = model(args)
-    elif model_name == 'transcycle30':
-        from .zoo.Test_models.TransCycle_model.TransCycle_model_30 import model
-        model = model(args)
-    elif model_name == 'Test U':
-        from .zoo.Test_models.TransCycle_model.TransCycle_model_30 import Unet_model
-        model = Unet_model(args)
+    elif 'TransCycle' in model_name:
+        from .zoo.Test_models.TransCycle_model import get_model
+        model = get_model(args)
     else:
         raise ValueError(f'Should enter exist model name!! Now put model name is {model_name}!!!')
 
@@ -157,13 +156,15 @@ def use_loss_fn(args):
 # Use_model 單元測試
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-modelname', type=str, default='segformer')
+    parser.add_argument('-modelname', type=str, default='U')
     parser.add_argument('-device', type=str, default='cuda')
     parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
-    parser.add_argument('-is', '--classes', type=int, default=3, help='')
+    parser.add_argument('-ic', '--imgchan', type=int, default=3, help='圖片通道')
+    parser.add_argument( '--classes', type=int, default=1, help='')
     args = parser.parse_args()
 
     m = Use_model(args)
+    print(m)
 
 
 

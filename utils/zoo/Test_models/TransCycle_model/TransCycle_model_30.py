@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import axial_attention as A
 from pdb import set_trace as S
 import segmentation_models_pytorch as smp
+from segmentation_models_pytorch.encoders.senet import SEBottleneck
 import pdb
 
 '''
@@ -30,17 +31,30 @@ class Depth_sep_conv(nn.Module):
         super().__init__()
         group = in_channels
         depth_conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=kernel_size,
-                               stride=stride, padding=padding, groups=group)
-        point_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+                               stride=stride, padding=padding, groups=group, bias=False)
+        point_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, bias=False)
         self.depthwise_separable_conv = torch.nn.Sequential(depth_conv, point_conv)
     def forward(self, x):
         return self.depthwise_separable_conv(x)
+
+class SEBottleneck_block(SEBottleneck):
+    '''
+    繼承SEBottleneck方法
+    out_channels表示為輸入轉換的接下來通道數。輸出為plane=plane*expansion，用意是為了減少參數量
+    reduction表示SE層bottleneck減少率
+    '''
+    expansion = 1
+
+    def __init__(self, in_channels, out_channels, stride=1, groups=1, reduction=1):
+        super(SEBottleneck_block, self).__init__(in_channels, out_channels, stride=stride, groups=groups, reduction=reduction)
 
 class BasicBlock(nn.Module):
     expansion = 1
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         conv3x3 = self.conv3x3
+        self.inplanes = inplanes
+        self.planes = planes
         # self.conv1 = conv3x3(inplanes, planes, stride) # -------------original
         self.conv1 = Depth_sep_conv(inplanes, planes, stride=stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -51,6 +65,10 @@ class BasicBlock(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
+        if self.stride != 1 or inplanes != planes:
+            self.downsample = nn.Sequential(nn.Conv2d(inplanes, planes, kernel_size=(1, 1), stride=(stride, stride), bias=False),
+                                            nn.BatchNorm2d(planes, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+                                            )
         self.identity_conv = nn.Conv2d(inplanes, planes, 1, 1, 0)
 
     def forward(self, x):
@@ -63,10 +81,10 @@ class BasicBlock(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
 
-        if self.downsample is not None:
+        if self.stride != 1 or self.inplanes != self.planes:
             identity = self.downsample(x)
-        if not identity.shape == out.shape:
-            identity = self.identity_conv(identity)
+        # if not identity.shape == out.shape:
+        #     identity = self.identity_conv(identity)
         out += identity
         out = self.relu(out)
 
@@ -84,6 +102,15 @@ def bulid_Conv_layer(inplanes, planes, n=1, stride=1):
     if n > 1:
         for _ in range(n-1):
             layer.append(BasicBlock(planes, planes, stride=stride))
+        return nn.Sequential(*layer)
+def bulid_se_layer(inplanes, planes, n=1, stride=1):
+    layer = nn.ModuleList()
+    layer.append(SEBottleneck_block(inplanes, planes//4, stride=stride))
+    if n == 1:
+        return nn.Sequential(*layer)
+    if n > 1:
+        for _ in range(n-1):
+            layer.append(SEBottleneck_block(planes, planes//4, stride=stride))
         return nn.Sequential(*layer)
 ## -----------------測試--------------
 
@@ -164,7 +191,7 @@ class TransCycle(nn.Module):
         return x
 
     def forward(self, x):
-        return self._forward3(x)
+        return self._forward1(x)
 
     def __repr__(self):
         repr_str = self.brancnn1.__repr__()
@@ -175,29 +202,32 @@ class TransCycle(nn.Module):
 class Unet(nn.Module):
     def __init__(self, imgsize, imgchan, classes):
         super().__init__()
-        C1, C2, C3, C4, C5 = 16, 32, 64, 128, 256
+        C1, C2, C3, C4, C5 = 64, 128, 256, 512, 256
         self.layer1 = nn.Sequential(bulid_Conv_layer(imgchan, C1, n=1),
                                     )
-        self.layer2 = nn.Sequential(bulid_Conv_layer(C1, C2, n=5),
+        self.layer2 = nn.Sequential(bulid_Conv_layer(C1, C2, n=1),
                                     nn.MaxPool2d(stride=2, kernel_size=2),
-                                    bulid_Conv_layer(C2, C2, n=5),
+                                    bulid_se_layer(C2, C2, n=2),
                                     )
-        self.layer3 = nn.Sequential(bulid_Conv_layer(C2, C3, n=7),
+        self.layer3 = nn.Sequential(bulid_Conv_layer(C2, C3, n=3),
                                     nn.MaxPool2d(stride=2, kernel_size=2))
-        self.layer4 = nn.Sequential(bulid_Conv_layer(C3, C4, n=7),
+        self.layer4 = nn.Sequential(bulid_Conv_layer(C3, C4, n=4),
                                     nn.MaxPool2d(stride=2, kernel_size=2),
-                                    bulid_Conv_layer(C4, C4, n=9),
-                                    bulid_Conv_layer(C4, C4, n=9),)
+                                    )
+        # layer4 橫向CNN堆疊+skip connection
+        self.layer4_skip_connections = nn.Sequential(bulid_Conv_layer(C4, C4, n=5),
+                                                     bulid_se_layer(C4, C4, n=4),)
 
-        self.d_layer4 = nn.Sequential(bulid_Conv_layer(C4, C3, n=9))
-        self.d_layer3 = nn.Sequential(bulid_Conv_layer(C3, C2, n=7))
-        self.d_layer2 = nn.Sequential(bulid_Conv_layer(C2, C1, n=5))
-        self.d_layer1 = nn.Sequential(bulid_Conv_layer(C1, classes, n=5))
+        self.d_layer4 = nn.Sequential(bulid_Conv_layer(C4, C3, n=1))
+        self.d_layer3 = nn.Sequential(bulid_Conv_layer(C3, C2, n=1))
+        self.d_layer2 = nn.Sequential(bulid_Conv_layer(C2, C1, n=1))
+        self.d_layer1 = nn.Sequential(bulid_Conv_layer(C1, classes, n=1))
     def _forward_implement(self, x):
         L1 = self.layer1(x)
         L2 = self.layer2(L1)
         L3 = self.layer3(L2)
         L4 = self.layer4(L3)
+        L4 = torch.add(self.layer4_skip_connections(L4), L4)
 
         L3 = L3 + F.interpolate(self.d_layer4(L4), scale_factor=2, mode='bilinear', align_corners=True)
         L2 = L2 + F.interpolate(self.d_layer3(L3), scale_factor=2, mode='bilinear', align_corners=True)
@@ -217,10 +247,12 @@ def _reset_parameter(self):
             nn.init.xavier_uniform_(m.weight, gain=1)
         elif isinstance(m, nn.Conv2d):
             nn.init.xavier_uniform_(m.weight, gain=1)
-            nn.init.zeros_(m.bias.data)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
         elif isinstance(m, nn.LayerNorm):
             nn.init.ones_(m.weight.data)
-            nn.init.zeros_(m.bias.data)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
 def model(arg):
     model = TransCycle(arg.imgsize, arg.imgchan, arg.classes)
@@ -236,10 +268,9 @@ if __name__ == '__main__':
     img = cv2.imread(r"D:/Programming/AI&ML/(Dataset)STU-Hospital/images/Test_Image_4.png")
     img = torch.tensor(img.transpose(2,0,1)).unsqueeze(0).to(torch.float32)
     # print(img.shape)
-
-    x = torch.randn(1,3,9,9)
-    # m = TransCycle(imgsize=128, imgchan=3, classes=1, )
-    m = Unet(imgsize=128, imgchan=3, classes=1, )
+    # x = torch.randn(1,16,32,32)
+    m = TransCycle(imgsize=128, imgchan=3, classes=1, )
+    # m = Unet(imgsize=128, imgchan=3, classes=1, )
 
     o = m(img)
     print(o.shape)

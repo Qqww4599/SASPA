@@ -13,25 +13,25 @@ data:
 logging:
   folder: .\config
 meta:
-  Name: Test U just test
-  modelname: Test U
+  Name: ResAttnModule_reduce_layer_L test2
+  modelname: TransFPN_Module_Unet_L
   use_autocast: 0
   device: cuda:0
 optimization:
   epochs: 200
   batchsize: 8
-  lr: 0.0005
+  lr: 0.001
   weight_decay: 1e-5
   train_accumulation_steps: 1
   k_fold: 5
   deep_supervise: false
   pos: false
 save:
-  save_frequency: 5
-  save_valid_img: True
+  save_frequency: 20
+  save_valid_img: False
   save_state_dict: True
   savemodel: True
   run_formal: True
-  direc: .\TotalResult_HAND\20220512\Test U just test
+  direc: .\TotalResult_HAND\20220520\ResAttnModule_reduce_layer_L test2
   savefig_resize: False
   threshold: 0.333

@@ -63,8 +63,8 @@ def main(args):
     # val_dataset = DataLoader(val_dataset)
     splits = KFold(n_splits=int(args.k_fold), shuffle=True, random_state=42)  # 設定random_state使輸出都一樣
 
-    if args.run_formal:
-        OU.Double_check_training_setting()
+    # if args.run_formal:
+    #     OU.Double_check_training_setting()
     model = Use_model(args)
     criteriwe = use_loss_fn(args)
     optimizer = use_opt(args, model)
@@ -72,7 +72,7 @@ def main(args):
     writer = SummaryWriter(f'{args.direc}/log')
     time_start = time.time()
     use_autocast = f'{"="*10} USE autocast! {"="*10}' if args.use_autocast else f'{"="*10} NO autocast! {"="*10}'
-    warnings.warn(use_autocast)
+    # warnings.warn(use_autocast)
 
     f_val_loss, f_f1, f_iou = 0.0, 0.0, 0.0
     for fold, (train_idx, val_idx) in enumerate(splits.split(train_dataset)):
@@ -81,6 +81,7 @@ def main(args):
         test_sampler = SubsetRandomSampler(val_idx)
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler)
         val_loader = DataLoader(train_dataset, batch_size=1, sampler=test_sampler)
+        one_fold_start_time = time.time()
         for i, epoch in enumerate(range(args.epoch)):
             loss = train_one_epoch(args,
                                    dataloader=train_loader,
@@ -121,6 +122,10 @@ def main(args):
                 f_val_loss += val_loss
                 f_f1 += f1
                 f_iou += iou
+                one_fold_end_time = time.time()
+                writer.add_scalar(f'fold Training time',
+                                  scalar_value=one_fold_end_time - one_fold_start_time,
+                                  global_step=fold+1)
                 print('=' * 10, 'last one eval finish!!!!!', '=' * 10)
                 #
                 # ---------- 模型初始化 ------------
@@ -207,9 +212,11 @@ def eval(val_dataset, model, folder_name, lossfn, binarization=False, scaling=Fa
                            resize=args.savefig_resize
                            )
             if binarization:
-                pred = (pred > args.threshold).float()  # 1, 1, 128, 128
+                # <Solved 已解決>用我自己設計的Unet跑無法產生影像，問題應該在閥值設定的問題。
+                th = pred.max() * args.threshold - pred.min() * (args.threshold - 1)
+                pred = (pred > th).float()
+                # pred = (pred > args.threshold).float()  # 1, 1, 128, 128
                 # pred = OU.THRESH_BINARY_for_pred(pred, return_tensor=True)
-            # pred_show = pred.clone()
             test_loss += lossfn(pred, mask)
             f1 += loss_fn.classwise_f1(pred, mask)
             iou += loss_fn.IoU(pred, mask)
@@ -228,72 +235,6 @@ def eval(val_dataset, model, folder_name, lossfn, binarization=False, scaling=Fa
     return val_loss, f1, iou
 
     # =============================額外增加功能放在這邊=============================
-# def save_training_images(image):
-#     '''
-#     ---------------------待刪改!!!-------------------------
-#     儲存訓練過程產生的影像，假設輸入影像大小為(1,c,h,w)'''
-#     b,c,h,w = image.shape
-#     assert c in [1,2,3], f'c is not in [1,2,3], c is {c}'
-#     if torch.is_tensor(image):
-#         image = image.squeeze(0)
-#     save_image(image, './Model_Result/test_files/test_image.png')
-# # def choose_loss_fn(output, target):
-# #     # 選擇使用的loss function。
-# #     # 經過測試可以使用的(在MedT環境中)：weight_cross_entropy, dice_coef_loss,IoU,FocalLoss
-# #     # validation階段調用
-# #     if args.loss_fn == 'wce':
-# #         # wce 可以接受channel=1的output
-# #         loss_fn_name = 'wce'
-# #         loss = loss_fn.weight_cross_entropy(output, target, wce_beta=args.wce_beta)
-# #     elif args.loss_fn == 'bce':
-# #         # wce 可以接受channel=1的output
-# #         loss_fn_name = 'bce'
-# #         loss = loss_fn.binary_cross_entropy(output, target, _2class=bool(args.classes-1))
-# #     elif args.loss_fn == 'dice_coef_loss':
-# #         loss_fn_name = 'dice_coef_loss'
-# #         loss = loss_fn.dice_coef_loss(output, target)
-# #     elif args.loss_fn == 'IoU':
-# #         loss_fn_name = 'IoU'
-# #         loss = loss_fn.IoU(output, target)
-# #     elif args.loss_fn == 'FocalLoss':  # 這個criterion是用torch.nn.module建立，需要當作layer看待
-# #         loss_fn_name = 'FocalLoss'
-# #         loss = loss_fn.FocalLoss()(output, target)
-# #     elif args.loss_fn == 'lll':
-# #         loss_fn_name = 'lll'
-# #         loss = loss_fn.LogNLLLoss()(output, target)
-# #     elif args.loss_fn == 'diceloss':
-# #         loss_fn_name = 'diceloss'
-# #         loss = loss_fn.dice_loss(output, target)
-# #     elif args.loss_fn == 'clsiou':
-# #         loss_fn_name = 'clsiou'
-# #         loss = loss_fn.classwise_iou(output, target)
-# #     # print('----- loss_fn_name: ',loss_fn_name, '-----')
-# #     return loss
-# # def init_training_result_folder():
-# #     '''初始化並創建資料夾'''
-# #     path = './Model_Result'
-# #     files = os.listdir(path)
-# #     for file in files:
-# #         cur_path = os.path.join(path,file)
-# #         if os.path.isdir(cur_path):
-# #             shutil.rmtree(cur_path, onerror=remove_readonly)
-# #         else:
-# #             os.remove(cur_path)
-# #     if not os.path.exists('./Model_Result/log'):
-# #         os.makedirs('./Model_Result/log')
-# #     if not os.path.exists('./Model_Result/test_files'):
-# #         os.makedirs('./Model_Result/test_files')
-# # def save_model_mode(model, model_name):
-# #     '''
-# #     儲存model的模式設定：
-# #     # safe_mode == 0 代表儲存多個模型；safe_mode == 1 儲存單一模型。已棄用。
-# #
-# #     此區域上未完工！！
-# #     '''
-# #     # 儲存模型
-# #     save_name = model_name
-# #     torch.save(model.state_dict(), save_name)
-# #     print(f"1 epoch finish!!! {model_name} are saved!", sep='\t')
 def deep_supervise(*feature, mask, lossfn):
     '''
     feature: 輸入影像之特徵(tuple of tensor), Any size of feature.
@@ -316,13 +257,9 @@ def deep_supervise(*feature, mask, lossfn):
     f_loss = torch.mul(f_weight, torch.tensor(f_loss)).sum()
     return f_loss
 def parser_args(model_name=None):
-    parser = argparse.ArgumentParser(description=' Version')
-
     'yaml test'
+    parser = argparse.ArgumentParser(description=' Version')
     parser.add_argument('--fname', type=str, help='name of config file to load', default=r'.\config\train_config.yaml')
-
-
-
     def _process_main(fname):
         import logging, pprint
         logging.basicConfig()
@@ -334,19 +271,18 @@ def parser_args(model_name=None):
             pp = pprint.PrettyPrinter(indent=4)
             pp.pprint(params)
         os.makedirs(params["save"]["direc"]) if os.path.exists(params["save"]["direc"]) is False else print('folder is exist')
-        dump = os.path.join(fr'{params["save"]["direc"]}', 'training setting.yaml')
-        print(dump)
-        OU.init_training_result_folder(params["save"]["direc"])
-        with open(dump, 'w') as f: # 寫入檔案
-            print('writing!!')
-            yaml.dump(params, f)
         return params
-
     absFilePath = os.path.abspath(__file__)
     fname = os.path.join(os.path.split(absFilePath)[0],'config/train_config.yaml')
     args = _process_main(fname)
     print(args['meta']['modelname'])
-
+    if args["save"]["run_formal"]:
+        OU.Double_check_training_setting()
+        OU.init_training_result_folder(args["save"]["direc"])
+    dump = os.path.join(fr'{args["save"]["direc"]}', 'training setting.yaml')
+    with open(dump, 'w') as f: # 寫入檔案
+        print('writing!!')
+        yaml.dump(args, f)
     # Training parameter setting
     parser.add_argument('--epoch', default=args['optimization']['epochs'], type=int, help='需要跑的輪數')
     parser.add_argument('-bs', '--batch_size', default=args['optimization']['batchsize'], type=int)

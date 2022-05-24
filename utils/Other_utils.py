@@ -86,6 +86,7 @@ def Double_check_training_setting():
     if 'n' in meta_check:
         print('再次確認並重新開始測試')
         sys.exit()
+    print('=-'*25)
     return None
 
 
