@@ -6,12 +6,12 @@
 
 #### ModelLab `<1>`: SwinDeeplabv3Plus: 以deeplabv3+作為骨架，在ASPP module中加入Swin Blocks
 
-![1656662257154.png](image/README/1656662257154.png)
+![1656662257154.png](otherData/1656662257154.png)
 
 
 ### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
 
-![1656662759542.png](image/README/1656662759542.png)
+![1656662759542.png](otherData/1656662759542.png)
 
 ## Setting
 
@@ -38,7 +38,7 @@
 
 | Model               | mIoU | Dice score | AUC | Inference time | Training time | Note |
 | ------------------- | ---- | ---------- | --- | -------------- | ------------- | ---- |
-| Unet++resnet34      |      |            |     |                |               |      |
+| Unet++resnet34      |   85.2%±1.68%   |      90.63%±0.77%      | 96.01%±0.45%| 0.0313 |10934|      |
 | Segformer           |      |            |     |                |               |      |
 | Medical transformer |      |            |     |                |               |      |
 | AxialattentionUnet  |      |            |     |                |               |      |
