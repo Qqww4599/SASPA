@@ -6,12 +6,11 @@
 
 #### ModelLab `<1>`: SwinDeeplabv3Plus: 以deeplabv3+作為骨架，在ASPP module中加入Swin Blocks
 
-![1656662257154.png](otherData/1656662257154.png)
-
+![1656665319379](image/README/1656665319379.png)
 
 ### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
 
-![1656662759542.png](otherData/1656662759542.png)
+![1656665330995](image/README/1656665330995.png)
 
 ## Setting
 
@@ -36,12 +35,19 @@
 
 ##### Compare models
 
-| Model               | mIoU | Dice score | AUC | Inference time | Training time | Note |
-| ------------------- | ---- | ---------- | --- | -------------- | ------------- | ---- |
-| Unet++resnet34      |   85.2%±1.68%   |      90.63%±0.77%      | 96.01%±0.45%| 0.0313 |10934|      |
-| Segformer           |      |            |     |                |               |      |
-| Medical transformer |      |            |     |                |               |      |
-| AxialattentionUnet  |      |            |     |                |               |      |
-| FPN_resnet34        |      |            |     |                |               |      |
-| Deeplabv3           |      |            |     |                |               |      |
-| SwinUNETR           |      |            |     |                |               |      |
+| Model               | mIoU           | Dice score     | AUC           | Inference time | Training time | Note |
+| ------------------- | -------------- | -------------- | ------------- | -------------- | ------------- | ---- |
+| Unet++resnet34      | 85.2%±1.68%   | 90.63%±0.77%  | 96.01%±0.45% | 0.0313         | 10934         |      |
+| Segformer           | 79.54%±8.08%  | 86.81%±5.37%  | 95.57%±2.23% | 0.0372         | 15560.04      |      |
+| Medical transformer | 47.56%±10.45% | 59.92%±11.34% | 84.6%±3%     | 0.3760         | 53753.18      |      |
+| AxialattentionUnet  | 51.93%±16.58% | 64.23%±13.72% | 85.56%±4.86% | 0.0375         | 12720.91      |      |
+| FPN_resnet34        | 82.69%±0.32%  | 89.1%±0.21%   | 95.45%±0.04% | 0.0189         | 8745.52       |      |
+| Deeplabv3           | 84.51%±0.07%  | 90.37%±0%     | 96.25%±0.1%  | 0.0123         | 10915.14      |      |
+| SwinUNETR           | 74.54%±0.02%  | 83.19%±0.08%  | 93.72%±0.05% | 0.0243         | 19736.67      |      |
+
+##### Test models
+
+| mIoU | Dice score | AUC | Inference time | Training time | Note |
+| ---- | ---------- | --- | -------------- | ------------- | ---- |
+|      |            |     |                |               |      |
+|      |            |     |                |               |      |
