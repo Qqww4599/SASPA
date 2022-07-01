@@ -6,11 +6,11 @@
 
 #### ModelLab `<1>`: SwinDeeplabv3Plus: 以deeplabv3+作為骨架，在ASPP module中加入Swin Blocks
 
-![1656665319379](image/README/1656665319379.png)
+![SwinDeeplabv3+](otherData/Swin_Deeplabv3+.jpg)
 
-### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
+#### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
 
-![1656665330995](image/README/1656665330995.png)
+![TransFPN-Unet](otherData/TransFPN(mobileViT).jpg)
 
 ## Setting
 
