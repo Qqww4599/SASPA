@@ -361,7 +361,7 @@ if __name__ == '__main__':
     '''
     from Dataloader_breastUS import ImageToImage2D
     from torch.utils.data import DataLoader
-    from Use_model import Use_model
+    from Use_model import use_model
     import argparse
     import torch
     import segmentation_models_pytorch as smp
@@ -464,7 +464,7 @@ if __name__ == '__main__':
     # build dataloader and model
     dataset = ImageToImage2D(test_ds, img_size=(args.imgsize,args.imgsize), merge_train=False)
     DL = DataLoader(dataset, batch_size=args.batchsize, shuffle=True)
-    model = Use_model(args)
+    model = use_model(args)
 
     # load model from trained model
     if args.load_state_dict:

@@ -37,7 +37,7 @@ def main(args):
         train_dataset = ImageToImage2D(args.train_dataset,img_size=(args.imgsize,args.imgsize))
         train_dataset = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     # 確定使用model種類
-    model = Use_model(args)
+    model = use_model(args)
     # 選擇optimizer種類，default: adam
     optimizer = use_opt(args, model)
     # 學習率動態調整方法，default: CosineAnnealingLR

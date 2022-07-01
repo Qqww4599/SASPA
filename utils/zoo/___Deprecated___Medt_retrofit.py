@@ -819,11 +819,11 @@ class use_global_branch(nn.Module):
         self.modules_name = module_name
         pretarin = 'imagenet' if pretarin == True else None
         if module_name == 'self_def_cnn':
-            self.global_encoder1 = utils.global_cnn(8, out_plane=32)  # 8, 32
-            self.global_encoder2 = utils.global_cnn(32, out_plane=64, downsample=True)
+            self.global_encoder1 = utils.GlobalCnn(8, out_plane=32)  # 8, 32
+            self.global_encoder2 = utils.GlobalCnn(32, out_plane=64, downsample=True)
 
-            self.global_decoder2 = utils.global_cnn(64, out_plane=32, upsample=True)
-            self.global_decoder1 = utils.global_cnn(32, out_plane=16, upsample=True)
+            self.global_decoder2 = utils.GlobalCnn(64, out_plane=32, upsample=True)
+            self.global_decoder1 = utils.GlobalCnn(32, out_plane=16, upsample=True)
         if module_name == 'resnet18':
             self.model = smp.UnetPlusPlus(module_name, in_channels=8, classes=16, encoder_weights=pretarin)
             self.upsample = nn.Upsample(scale_factor=2)

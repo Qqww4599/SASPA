@@ -11,11 +11,11 @@ from torchvision import transforms
 import pdb
 
 from typing import Callable
+from typing import Container
+
 import os
 import cv2
 import pandas as pd
-
-from typing import Container
 import argparse
 
 
@@ -101,6 +101,7 @@ class JointTransform2D:
 
         return image, mask
 
+
 class ImageToImage2D(Dataset):
     """
     Reads the images and applies the augmentation transform on them.
@@ -130,11 +131,13 @@ class ImageToImage2D(Dataset):
 
     def __init__(self, dataset_path: str, joint_transform: Callable = None, Gray=False,
                  merge_train:bool=True, img_size=(256,256), get_catagory=None, only_positive=True) -> None:
-        '''
+
+        """
         path example:"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new"
         catagory: 是否使用類別
         only_positive: 只使用有腫瘤的影像訓練
-        '''
+        """
+
         # 如果是merge_train直接輸入包含benign和malignant的路徑。EX：folder：normal_new,malignant_new,benign_new
         # 訓練資料包含benign,malignant,normal，normal的mask全部都是0(代表無病灶標記)。
         # 如果只要訓練有腫瘤部分，需要再另外把範圍縮小到只有benign,malignant
@@ -232,7 +235,7 @@ class Image2D(DataLoader):
                   |-- img002.png
                   |-- ...
     '''
-    def __init__(self, dataset_path, img_size=(256,256),Gray=False):
+    def __init__(self, dataset_path, img_size=(256,256), Gray=False):
         # ========記得調整影像大小!!!!!!!!!!!!!======
         self.img_size = img_size
         self.dataset_path = dataset_path
@@ -301,15 +304,6 @@ if __name__ == '__main__':
         if i == 1:
             break
         # print(image.shape, mask.shape, sep='\n')
-        if image.ndim or mask.ndim == 4:
-            image, mask = image.reshape(*image.shape), mask.reshape(*mask.shape)# 去掉batch維度
-            print(image.shape, mask.shape, sep='\n')
-    sys.exit()
-    for i, (image, mask, catagory) in enumerate(dataset):
-        if i == 1:
-            break
-        # print(image.shape, mask.shape, sep='\n')
-        print(f'catagory is: {catagory}')
         if image.ndim or mask.ndim == 4:
             image, mask = image.reshape(*image.shape), mask.reshape(*mask.shape)# 去掉batch維度
             print(image.shape, mask.shape, sep='\n')
