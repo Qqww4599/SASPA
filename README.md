@@ -53,4 +53,4 @@
 | TransFPN_Module_Unet_VANNILA  |   73.78%±0.52%   |      83.7%±0.42%      |  93.42%±0.11%   |       0.1042          |        37122.94       |      |
 
 ### Result
-![External validation：Dice-score to MACs](/assets/External%20validation：Dice-score%20to%20MACs.png)
+![External validation：Dice-score to MACs](otherData/External%20validation：Dice-score%20to%20MACs.png)
