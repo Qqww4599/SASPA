@@ -79,23 +79,24 @@ def main(args):
                                    scheduler=scheduler,
                                    lossfn=criteria)
             writer.add_scalar(f'training {args.loss_fn} loss', scalar_value=loss, global_step=i + (args.epoch * fold))
-            if i % save_freq == 0:
-                assert save_freq > 1, 'save_freq只能設定大於1。'
-                val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize), Gray=gray)
-                final_val_dataset = DataLoader(val_dataset)
-                folder_name = fr'{args.direc}/val_images/fold{fold + 1}_epoch{epoch + 1}'
-                save_model_name = f'{args.direc}/model_fold_{fold + 1}_{epoch + 1}.pth'
-                val_loss, f1, iou = eval(final_val_dataset, model, folder_name,
-                                         binarization=True,
-                                         scaling=True,  # must set scaling and binarization
-                                         save_valid_img=args.save_valid_img,
-                                         lossfn=criteria,
-                                         args=args,
-                                         save_model=False,
-                                         save_model_name=save_model_name)
-                writer.add_scalar(f'fold_{fold} val_loss', scalar_value=val_loss, global_step=i)
-                writer.add_scalar(f'fold_{fold} f1 score', scalar_value=f1, global_step=i)
-                writer.add_scalar(f'fold_{fold} mIoU score', scalar_value=iou, global_step=i)
+            if save_freq != 0:  # 驗證是否固定頻率紀錄訓練狀況
+                if i % save_freq == 0:
+                    assert save_freq > 1, 'save_freq只能設定大於1。'
+                    val_dataset = Image2D(args.val_dataset, img_size=(args.imgsize, args.imgsize), Gray=gray)
+                    final_val_dataset = DataLoader(val_dataset)
+                    folder_name = fr'{args.direc}/val_images/fold{fold + 1}_epoch{epoch + 1}'
+                    save_model_name = f'{args.direc}/model_fold_{fold + 1}_{epoch + 1}.pth'
+                    val_loss, f1, iou = eval(final_val_dataset, model, folder_name,
+                                             binarization=True,
+                                             scaling=True,  # must set scaling and binarization
+                                             save_valid_img=args.save_valid_img,
+                                             lossfn=criteria,
+                                             args=args,
+                                             save_model=False,
+                                             save_model_name=save_model_name)
+                    writer.add_scalar(f'fold_{fold} val_loss', scalar_value=val_loss, global_step=i)
+                    writer.add_scalar(f'fold_{fold} f1 score', scalar_value=f1, global_step=i)
+                    writer.add_scalar(f'fold_{fold} mIoU score', scalar_value=iou, global_step=i)
             if i + 1 == args.epoch:
                 print('=' * 10, 'last one eval', '=' * 10)
                 folder_name = fr'{args.direc}/val_images/fold{fold + 1}_epoch{epoch + 1}'
@@ -284,7 +285,7 @@ def parser_args():
 
     # Save Setting
     parser.add_argument('-sf', '--save_freq', type=int, default=args['save']['save_frequency'],
-                        help='多少個epoch儲存一次checkpoint')
+                        help='多少個epoch儲存一次checkpoint。Set 0 將不會進行測試')
     parser.add_argument('--save_state_dict', type=bool, default=args['save']['save_state_dict'],
                         help='是否只儲存權重，默認為權重')
     parser.add_argument('--savemodel', type=bool, default=args['save']['savemodel'], help='是否儲存模型')

@@ -1,3 +1,5 @@
+import csv
+
 from torch.utils.data import DataLoader, Dataset
 from sklearn import metrics
 from ptflops import get_model_complexity_info
@@ -66,7 +68,6 @@ reject = {'null', 'Null', 'No', 'no', 'n', '0', 'None', 'none', 'False'}
 TEST_DATA = {'Internal validation': r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\InterTEST",
              'External validation': r"D:\Programming\AI&ML\(Dataset)STU-Hospital"}
 isOldTraining = False  # 之前測試輸出影像方向錯誤改正
-RecordType = 'csv'
 test_dataset = ['i', 'e']
 
 
@@ -90,6 +91,8 @@ def args_parser(n_folds):
         show_image = cfg.getboolean('model_set', 'show_image')
         save_pred_binary = cfg.getboolean('model_set', 'save_pred_binary')
         log_file_path = cfg.get('model_set', 'test_log')
+        RecordType = cfg.get('model_set', 'RecordType')
+
 
     if MOTHER_FOLDER not in reject:
         print('---MOTHER_FOLDER---')
@@ -134,6 +137,7 @@ def args_parser(n_folds):
     # 測試(數值)結果儲存
     parser.add_argument('--log_file_path', type=str, default=log_file_path, help='測試(數值)結果儲存路徑')
     parser.add_argument('--MOTHER_FOLDER', type=str, default=MOTHER_FOLDER, help='測試(數值)結果儲存路徑')
+    parser.add_argument('--RecordType', type=str, default=RecordType, help='儲存格式')
 
     args = parser.parse_args()
 
@@ -241,11 +245,33 @@ def plot_roc_curve(fper, tper):
     plt.show()
 
 
+def write_a_row(
+        csv_data_path: str,
+        mIoU:float,
+        Dice:float,
+        AUC:float,
+        Avg_inference_time:float,
+        status,
+        args,
+        params,
+        macs,
+        write_mode='a',
+
+):
+    one_fold_data_array = [mIoU, Dice, AUC, Avg_inference_time]
+    with open(csv_data_path, write_mode, newline='') as file:
+        mywriter = csv.writer(file, delimiter=',')
+        if write_mode == 'w':
+            data_info_title = ['Record time', 'Test Dataset', 'Test name', 'Model name', 'Parameters']
+            data_info_values = [time.asctime(), status, args.training_details, args.modelname, params, macs]
+            data_title = ['mIoU', 'Dice', 'AUC', 'Avg_inference_time']
+            mywriter.writerow(np.array(data_info_title))
+            mywriter.writerow(np.array(data_info_values))
+            mywriter.writerow(np.array(data_title))
+        mywriter.writerow(np.array(one_fold_data_array))
+
+
 def main(n_folds, test_dataset_path):
-    """
-    TODO: 請加入使用內部資料及外部資料的資訊
-    TODO: 請新增輸出資料為csv的檔案格式
-    """
     args = args_parser(n_folds)
     dataloader = DataLoader(TestDataloader(test_dataset_path, args=args))
     # 載入模型
@@ -341,30 +367,46 @@ def main(n_folds, test_dataset_path):
         plt.close('all')
         continue
     status = InterOrOuterDataset(test_dataset_path)
-    if RecordType == 'csv':
-        pass
 
+    """
+    To Record:  mIoU, F1/Dice, AUC, Avg inference time
+    """
     # Log writer 記錄測試紀錄
     write_mode = 'w' if n_folds == 1 else 'a'
-    # 紀錄檔名稱(test_dataset_path + TestResultLog.txt)
-    log_file_path = os.path.join(args.MOTHER_FOLDER, f'{status}_TestResultLog.txt')
 
-    with open(log_file_path, write_mode) as L:
+    if args.RecordType == 'csv':
         n = len(dataloader)
-        if n_folds == 1:
-            L.write("=" * 40 + "\n\n", )
-            L.write(f'Record time: {time.asctime()}\n\n')
-            L.write(f'Test Dataset: {status}\n\n')
-            L.write(f'Test name: {args.training_details}\n\n')
-            L.write(f'Model name: {args.modelname}\n\n')
-            L.write(f'Parameters: {params}\nComputational complexity: {macs}\n\n')
-        L.write(f'=========== Fold {n_folds} Result ============\n\n')
-        L.write(f'Mean mIoU  (ON TEST DATA): \n{iou_final / n}\n\n')
-        L.write(f'Mean F1/Dice  (ON TEST DATA): \n{Dice_final / n}\n\n')
-        L.write(f'Mean AUC  (ON TEST DATA): \n{AUC_final / n}\n\n')
-        L.write(f'Avg inference time: \n{infer_time / n}\n\n')
-        L.write(f'===================================\n\n\n\n\n')
-        L.close()
+        log_file_path = os.path.join(args.MOTHER_FOLDER, f'{status}_TestResultLog.csv')
+        write_a_row(log_file_path,
+                    iou_final / n,
+                    Dice_final / n,
+                    AUC_final / n,
+                    infer_time / n,
+                    status=status,
+                    args=args,
+                    params=params,
+                    macs=macs,
+                    write_mode=write_mode)
+
+    else:
+        # 紀錄檔名稱(test_dataset_path + TestResultLog.txt)
+        log_file_path = os.path.join(args.MOTHER_FOLDER, f'{status}_TestResultLog.txt')
+        with open(log_file_path, write_mode) as L:
+            n = len(dataloader)
+            if n_folds == 1:
+                L.write("=" * 40 + "\n\n", )
+                L.write(f'Record time: {time.asctime()}\n\n')
+                L.write(f'Test Dataset: {status}\n\n')
+                L.write(f'Test name: {args.training_details}\n\n')
+                L.write(f'Model name: {args.modelname}\n\n')
+                L.write(f'Parameters: {params}\nComputational complexity: {macs}\n\n')
+            L.write(f'=========== Fold {n_folds} Result ============\n\n')
+            L.write(f'Mean mIoU  (ON TEST DATA): \n{iou_final / n}\n\n')
+            L.write(f'Mean F1/Dice  (ON TEST DATA): \n{Dice_final / n}\n\n')
+            L.write(f'Mean AUC  (ON TEST DATA): \n{AUC_final / n}\n\n')
+            L.write(f'Avg inference time: \n{infer_time / n}\n\n')
+            L.write(f'===================================\n\n\n\n\n')
+            L.close()
 
 
 if __name__ == '__main__':

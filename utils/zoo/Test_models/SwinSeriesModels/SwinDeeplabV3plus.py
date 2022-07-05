@@ -145,10 +145,14 @@ class ASPP(nn.Module):
                                        BasicLayer(dim=out_channels, depth=2, num_heads=8,
                                                   window_size=(7, 7), drop_path=0.2, attn_drop=0.1)
                                        )
-
-        modules.append(SwinBlockRate1)
+        SwinBlockRate3 = nn.Sequential(ASPPConvModule(in_channels, out_channels, rate3),
+                                       BasicLayer(dim=out_channels, depth=2, num_heads=8,
+                                                  window_size=(7, 7), drop_path=0.2, attn_drop=0.1)
+                                       )
+        # 試過rate1+2, rate1+3
+        modules.append(ASPPConvModule(in_channels, out_channels, rate1))
         modules.append(SwinBlockRate2)
-        modules.append(ASPPConvModule(in_channels, out_channels, rate3))
+        modules.append(SwinBlockRate3)
         modules.append(ASPPPooling(in_channels, out_channels))
 
         self.convs = nn.ModuleList(modules)

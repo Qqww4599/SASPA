@@ -47,7 +47,10 @@
 
 ##### Test models
 
-| mIoU | Dice score | AUC | Inference time | Training time | Note |
-| ---- | ---------- | --- | -------------- | ------------- | ---- |
-|      |            |     |                |               |      |
-|      |            |     |                |               |      |
+| Model | mIoU | Dice score | AUC | Inference time | Training time | Note |
+| --- | ---- | ---------- | --- | -------------- | ------------- | ---- |
+| Swin-Deeplab+v3 |   74.46%±0.34%   |      84.6%±0.1%      |  94.73%±0.01%   |        0.0196         |       8553.8       |      |
+| TransFPN_Module_Unet_VANNILA  |   73.78%±0.52%   |      83.7%±0.42%      |  93.42%±0.11%   |       0.1042          |        37122.94       |      |
+
+### Result
+![External validation：Dice-score to MACs](/assets/External%20validation：Dice-score%20to%20MACs.png)
