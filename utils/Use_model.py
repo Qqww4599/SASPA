@@ -109,7 +109,7 @@ def use_model(args):
         測試項目: swindeeplabv3plus_ver12
         """
         from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver13 import swindeeplabv3plus_ver13
-        # from MainResearch.utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_Based import swindeeplabv3plus_MODIFIED
+        # from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_Based import swindeeplabv3plus_MODIFIED
         model = swindeeplabv3plus_ver13(swinblock=True)
     else:
         raise ValueError(f'Should enter exist model name!! Now put model name is {model_name}!!!')
