@@ -10,7 +10,7 @@
 
 #### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
 
-![TransFPN-Unet](otherData/TransFPN(mobileViT).jpg)
+![TransFPN_Module_Unet](otherData/TransFPN(mobileViT).jpg)
 
 ## Setting
 

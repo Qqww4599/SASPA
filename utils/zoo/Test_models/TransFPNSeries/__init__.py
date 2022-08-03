@@ -48,8 +48,6 @@ def get_model(args):
         model = timm.create_model('TransFPN_Module_Unet_XS')
     elif args.modelname == 'Mobilevitv2Module_Unet':
         model = timm.create_model(args.modelname)
-    elif args.modelname == 'Deeplabv3_Modified':
-        model = timm.create_model(args.modelname)
 
     else:
         raise NotImplementedError('Not Implemented!!')

@@ -4,8 +4,11 @@ from torch.utils.data import DataLoader, Dataset
 from sklearn import metrics
 from ptflops import get_model_complexity_info
 
-from MainResearch.utils.loss_fn import classwise_f1, IoU, dice_loss, sigmoid_scaling
-from MainResearch.utils.Use_model import use_model
+# 修改project路徑前使用版本
+# from MainResearch.utils.loss_fn import classwise_f1, IoU, dice_loss, sigmoid_scaling
+# from MainResearch.utils.Use_model import use_model
+from utils.loss_fn import classwise_f1, IoU, dice_loss, sigmoid_scaling
+from utils.Use_model import use_model
 from cv2 import (imread, resize, imwrite)
 from cv2 import (adaptiveThreshold, ADAPTIVE_THRESH_MEAN_C, medianBlur, INTER_NEAREST, ADAPTIVE_THRESH_GAUSSIAN_C,
                  THRESH_BINARY)
@@ -29,7 +32,7 @@ import sys
     快速設置參數：MOTHER_FOLDER。MOTHER_FOLDER直接傳入ModelResult資料夾即可使用。
     show_image: 是否顯示影像
     scale: 模型輸出是否經過sigmoid調整
-    save_pred_binary: 是否直接儲存二值化影像
+    save_specific_image: 是否儲存特定影像(作圖用)
 2. Method 2 (手動設置方法):
     training_setting_path: 訓練配置檔案(.yaml)位置 
     model_path: 模型權重/紀錄位置
@@ -37,7 +40,7 @@ import sys
     save_path: 輸出影像儲存路徑
     show_image: 是否顯示影像
     scale: 模型輸出是否經過sigmoid調整
-    save_pred_binary: 是否直接儲存二值化影像
+    save_specific_image: 是否儲存特定影像(作圖用)
 
 本實驗之測試目標：
     
@@ -89,7 +92,7 @@ def args_parser(n_folds):
         scale = cfg.getboolean('model_set', 'scale')  # 取得bool
         save_path = cfg.get('model_set', 'save_path')
         show_image = cfg.getboolean('model_set', 'show_image')
-        save_pred_binary = cfg.getboolean('model_set', 'save_pred_binary')
+        save_specific_image = cfg.getboolean('model_set', 'save_specific_image')
         log_file_path = cfg.get('model_set', 'test_log')
         RecordType = cfg.get('model_set', 'RecordType')
 
@@ -133,7 +136,7 @@ def args_parser(n_folds):
     # pred輸出設定
     parser.add_argument('--scale', type=bool, default=scale, help='pred輸出是否要經過sigmoid scale')
     parser.add_argument('--show_image', type=bool, default=show_image, help='show_image')
-    parser.add_argument('--save_pred_binary', type=bool, default=save_pred_binary, help='')
+    parser.add_argument('--save_specific_image', type=bool, default=save_specific_image, help='save_specific_image')
     # 測試(數值)結果儲存
     parser.add_argument('--log_file_path', type=str, default=log_file_path, help='測試(數值)結果儲存路徑')
     parser.add_argument('--MOTHER_FOLDER', type=str, default=MOTHER_FOLDER, help='測試(數值)結果儲存路徑')
@@ -338,11 +341,14 @@ def main(n_folds, test_dataset_path):
         plt.imshow(gussan_th, alpha=0.4)
         plt.imshow(image, alpha=0.3)
         plt.imshow(mask.cpu().reshape(128, 128), alpha=0.3)
-        if args.save_pred_binary:
-            bi_folder_path = os.path.join(args.save_path, 'bi_pred_file')
+
+        indexOfSpecificImage = [42, 56, 57]
+        if args.save_specific_image and index in indexOfSpecificImage:
+            bi_folder_path = os.path.join(args.save_path, f'{n_folds}-fold specific image')
             os.makedirs(bi_folder_path) if os.path.exists(bi_folder_path) is False else reject
             f_name = os.path.join(bi_folder_path, f'{index} pred.png')
-            imwrite(f_name, gussan_th)
+            imwrite(f_name, (gussan_th.numpy() * 255).astype('uint8'))
+
 
         ax = fig.add_subplot(2, 2, 3)
         ax.set_xlabel("")
@@ -416,4 +422,8 @@ if __name__ == '__main__':
     n_fold = 5
     for dataset_path in TEST_DATA.values():
         for i in range(n_fold):
+            # try:
+            #     main(i + 1, dataset_path)
+            # except:
+            #     pass
             main(i + 1, dataset_path)

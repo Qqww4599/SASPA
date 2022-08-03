@@ -78,7 +78,7 @@ def main(args):
                                    optimizer=optimizer,
                                    scheduler=scheduler,
                                    lossfn=criteria)
-            writer.add_scalar(f'training {args.loss_fn} loss', scalar_value=loss, global_step=i + (args.epoch * fold))
+            writer.add_scalar(f'fold{fold} training {args.loss_fn} loss', scalar_value=loss, global_step=i + (args.epoch * fold))
             if save_freq != 0:  # 驗證是否固定頻率紀錄訓練狀況
                 if i % save_freq == 0:
                     assert save_freq > 1, 'save_freq只能設定大於1。'
@@ -192,7 +192,6 @@ def eval(val_dataset, model, folder_name, lossfn, args=None, binarization=False,
                            resize=args.savefig_resize
                            )
             if binarization:
-                # <Solved 已解決>用我自己設計的Unet跑無法產生影像，問題應該在閥值設定的問題。
                 th = pred.max() * args.threshold - pred.min() * (args.threshold - 1)
                 pred = (pred > th).float()
                 # pred = (pred > args.threshold).float()  # 1, 1, 128, 128
