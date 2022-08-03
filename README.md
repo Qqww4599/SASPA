@@ -1,8 +1,8 @@
-# XNet: Attention combine CNN network for breast ultrasound image segmentation
+# Swin-DeeplabV3+: Enhanced Segmentation Performance of Breast Tumor Ultrasound Images Using SwinBlock
 
-目前model無正式名稱，屬於開發階段。未來將在此新增相關型介紹。
+Swin-DeeplabV3+，目前屬於開發測試階段。未來將在此新增相關型介紹。
 
-## Test models
+## Test models History
 
 #### ModelLab `<1>`: SwinDeeplabv3Plus: 以deeplabv3+作為骨架，在ASPP module中加入Swin Blocks
 
@@ -10,7 +10,7 @@
 
 #### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
 
-![TransFPN_Module_Unet](otherData/TransFPN(mobileViT).jpg)
+![TransFPN-Unet](otherData/TransFPN(mobileViT).jpg)
 
 ## Setting
 
