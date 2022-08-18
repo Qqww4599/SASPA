@@ -1,3 +1,4 @@
+import pdb
 import sys
 from typing import (Optional, Tuple)
 
@@ -15,11 +16,11 @@ from monai.networks.nets.swin_unetr import BasicLayer
 from torch import nn
 from torch.nn import functional as F
 
-__all__ = ['swindeeplabv3plus']
+__all__ = ['swindeeplabv3plus_MODIFIED']
 
 
-class swindeeplabv3plus(SegmentationModel):
-    """DeepLabV3 add with Swin block, from smp.decoder.deeplabv3 """
+class swindeeplabv3plus_MODIFIED(SegmentationModel):
+    """DeepLabV3-based Swin model, from smp.decoder.deeplabv3 """
 
     def __init__(self,
                  encoder_name: str = "resnet34",
@@ -57,7 +58,13 @@ class swindeeplabv3plus(SegmentationModel):
 
 class Swin_deeplabv3plusdecoder(nn.Sequential):
     """
+    Swin-deeplabv3 Modefied ver1.1
     modified deeplabv3+ with Swin block
+
+    ver1.2: ASPP.swin_feature_fusion刪除Basiclayer後的conv
+
+    Ideas:
+    使用的encoder特徵圖不只特定二層(default: encoder_output[-1] for ASPP, encoder_output[-4] for block1)
     """
     def __init__(
             self,
@@ -85,6 +92,7 @@ class Swin_deeplabv3plusdecoder(nn.Sequential):
 
         highres_in_channels = encoder_channels[-4]
         highres_out_channels = 48  # proposed by authors of paper
+        # block REMAKE
         self.block1 = nn.Sequential(
             nn.Conv2d(highres_in_channels, highres_out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(highres_out_channels),
@@ -101,21 +109,11 @@ class Swin_deeplabv3plusdecoder(nn.Sequential):
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
         )
-        # block1, block2架構改造測試(Remake)：
-        self.block1_remake = nn.Sequential(
-            nn.Conv2d(highres_in_channels, highres_out_channels, kernel_size=1, bias=False),
-            BasicLayer(dim=highres_out_channels, depth=2, num_heads=8, window_size=(7, 7), drop_path=0.2, attn_drop=0.1),
-        )
-        self.block2_remake = nn.Sequential(
-            nn.Conv2d(highres_in_channels, highres_out_channels, kernel_size=1, bias=False),
-            nn.BatchNorm2d(highres_out_channels),
-            nn.ReLU(),
-        )
 
     def forward(self, *features):
-        aspp_features = self.aspp(features[-1])
+        aspp_features = self.aspp(features[-3:])  # (128, 16, 16), (256, 8, 8), (512, 8, 8)
         aspp_features = self.up(aspp_features)
-        high_res_features = self.block1(features[-4])
+        high_res_features = self.block1(features[-4])  # 64, 32, 32
         concat_features = torch.cat([aspp_features, high_res_features], dim=1)
         fused_features = self.block2(concat_features)
         return fused_features
@@ -141,25 +139,18 @@ class ASPP(nn.Module):
         rate1, rate2, rate3 = tuple(atrous_rates)
         ASPPConvModule = ASPPConv if not separable else ASPPSeparableConv
 
+        self.swin_feature_fusion = nn.Sequential(nn.Conv2d(512+256+128, in_channels, kernel_size=1, stride=1),
+                                                 BasicLayer(dim=in_channels, depth=4, num_heads=8, window_size=(7, 7),
+                                                            drop_path=0.2, attn_drop=0.1),
+                                                 )
+
         # experimental: Test 'BasicLayer' and 'SwinTransformerBlock'
         # BasicLayer是Swin基本建構單元，由多個SwinTransformerBlock組成(內涵3d轉4d的函式)
         # SwinTransformerBlock是Swin基本運算單元
         # 測試window size=21
-        SwinBlockRate1 = nn.Sequential(ASPPConvModule(in_channels, out_channels, rate1),
-                                       BasicLayer(dim=out_channels, depth=2, num_heads=8,
-                                                  window_size=(7, 7), drop_path=0.2, attn_drop=0.1)
-                                       )
-        SwinBlockRate2 = nn.Sequential(ASPPConvModule(in_channels, out_channels, rate2),
-                                       BasicLayer(dim=out_channels, depth=2, num_heads=8,
-                                                  window_size=(7, 7), drop_path=0.2, attn_drop=0.1)
-                                       )
-        SwinBlockRate3 = nn.Sequential(ASPPConvModule(in_channels, out_channels, rate3),
-                                       BasicLayer(dim=out_channels, depth=2, num_heads=8,
-                                                  window_size=(7, 7), drop_path=0.2, attn_drop=0.1)
-                                       )
-        # 試過rate1+2, rate1+3, rate2+3
-        modules.append(SwinBlockRate1)
-        modules.append(SwinBlockRate2)
+
+        modules.append(ASPPConvModule(in_channels, out_channels, rate1))
+        modules.append(ASPPConvModule(in_channels, out_channels, rate2))
         modules.append(ASPPConvModule(in_channels, out_channels, rate3))
         modules.append(ASPPPooling(in_channels, out_channels))
 
@@ -173,6 +164,10 @@ class ASPP(nn.Module):
         )
 
     def forward(self, x):
+        feature1, feature2, feature3 = x # (128, 16, 16), (256, 8, 8), (512, 8, 8)
+        x = torch.cat((F.avg_pool2d(feature1, kernel_size=2), feature2, feature3), dim=1)
+        x = self.swin_feature_fusion(x)
+
         res = []
         for conv in self.convs:
             res.append(conv(x))
@@ -221,12 +216,12 @@ def main():
     # Deeplabv3Plus = DeepLabV3Plus()
     # print(Deeplabv3Plus(testdata).shape)
 
-    model = swindeeplabv3plus()
+    model = swindeeplabv3plus_MODIFIED()
     output = model(testdata)
-    total_params = sum(p.numel() for p in model.parameters())
-    print('{} parameter：{:8f}M'.format(model, total_params / 1000000))  # 確認模型參數數量
     print(output.shape)
-
+    # total_params = sum(p.numel() for p in model.parameters())
+    # print('{} parameter：{:8f}M'.format(model, total_params / 1000000))  # 確認模型參數數量
+    # print(output.shape)
 
 
 if __name__ == '__main__':

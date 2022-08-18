@@ -1,5 +1,5 @@
 criterion:
-  loss: bce
+  loss: BCEDicePenalizeBorderLoss
   scheduler: ReduceLROnPlateau
   optimizer: adamw
 data:
@@ -13,11 +13,11 @@ data:
 logging:
   folder: .\config
 meta:
-  Name: unet++_resnet34 batchsize=32
-  modelname: unet++_resnet34
+  Name: SwinDeeplabv3Plus newproj test
+  modelname: SwinDeeplabv3Plus
   device: cuda:0
 optimization:
-  epochs: 200
+  epochs: 5
   batchsize: 32
   lr: 0.001
   weight_decay: 1e-5
@@ -29,7 +29,7 @@ save:
   save_valid_img: True
   save_state_dict: True
   savemodel: True
-  run_formal: True
-  direc: .\TotalResult_HAND\20220705\unet++_resnet34 batchsize=32 test2
+  run_formal: False
+  direc: .\TotalResult_HAND\20220817\SwinDeeplabv3Plus test
   savefig_resize: False
   threshold: 0.333

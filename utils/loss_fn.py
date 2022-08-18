@@ -8,7 +8,7 @@ import pdb
 import matplotlib.pyplot as plt
 
 from torch.nn.functional import cross_entropy
-from torch.nn.modules.loss import _WeightedLoss # 用於LogNLLLoss
+from torch.nn.modules.loss import _WeightedLoss  # 用於LogNLLLoss
 
 '''
 loss_fn ver1.0
@@ -33,73 +33,86 @@ binary_cross_entropy(bce):
 
 '''
 
+
 def Binarization(x, th):
-    x = x*255
-    x[x>=th] = 1
-    x[x<th] = 0
+    x = x * 255
+    x[x >= th] = 1
+    x[x < th] = 0
     return x
+
+
 def scaling(x):
     max = x.max()
     min = x.min()
-    dist = max-min
+    dist = max - min
     if dist == 0:
         return x
     return (x - min) / dist
+
+
 class FocalLoss(torch.nn.Module):
     def __init__(self, gamma=0, alpha=None, size_average=True):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
-        if isinstance(alpha,(float,int)): self.alpha = torch.Tensor([alpha,1-alpha])
-        if isinstance(alpha,list): self.alpha = torch.Tensor(alpha)
+        if isinstance(alpha, (float, int)): self.alpha = torch.Tensor([alpha, 1 - alpha])
+        if isinstance(alpha, list): self.alpha = torch.Tensor(alpha)
         self.size_average = size_average
 
     def forward(self, input, target):
-        if input.dim()>2:
-            input = input.view(input.size(0),input.size(1),-1)  # N,C,H,W => N,C,H*W
-            input = input.transpose(1,2)    # N,C,H*W => N,H*W,C
-            input = input.contiguous().view(-1,input.size(2))   # N,H*W,C => N*H*W,C
+        if input.dim() > 2:
+            input = input.view(input.size(0), input.size(1), -1)  # N,C,H,W => N,C,H*W
+            input = input.transpose(1, 2)  # N,C,H*W => N,H*W,C
+            input = input.contiguous().view(-1, input.size(2))  # N,H*W,C => N*H*W,C
 
             target = target.view(target.size(0), target.size(1), -1)  # N,C,H,W => N,C,H*W
             target = target.transpose(1, 2)  # N,C,H*W => N,H*W,C
             target = target.contiguous().view(-1, target.size(2))  # N,H*W,C => N*H*W,C
-        target = target.reshape(-1,1)
+        target = target.reshape(-1, 1)
         # print('target：',target.shape)
-        logpt = F.log_softmax(input,dim=-1)
+        logpt = F.log_softmax(input, dim=-1)
         # return logpt, logpt.shape,target, target.shape
-        logpt = logpt.gather(1,target.type(torch.int64))
+        logpt = logpt.gather(1, target.type(torch.int64))
         logpt = logpt.view(-1)
         pt = Variable(logpt.data.exp())
 
         if self.alpha is not None:
-            if self.alpha.type()!=input.data.type():
+            if self.alpha.type() != input.data.type():
                 self.alpha = self.alpha.type_as(input.data)
-            at = self.alpha.gather(0,target.data.view(-1))
+            at = self.alpha.gather(0, target.data.view(-1))
             logpt = logpt * Variable(at)
 
-        loss = -1 * (1-pt)**self.gamma * logpt
+        loss = -1 * (1 - pt) ** self.gamma * logpt
         if self.size_average:
             return loss.mean()
         else:
             return loss.sum()
+
+
 def sigmoid_scaling(x):
-    x = torch.sigmoid(x) # 用torch內建方法
+    x = torch.sigmoid(x)  # 用torch內建方法
     return x
+
+
 def dice_coef_loss(y_true, y_pred):
     '''就是Diceloss的算法'''
+
     def dice_coef(y_true, y_pred, smooth=1):
         '''input：image(b c h w), mask(b c h w), (1,3,512,512)'''
         # y_true, y_pred = y_true.to('cpu'), y_pred.to('cpu')
         # y_true,y_pred = y_true.numpy(), y_pred.numpy()
         multiple = y_true * y_pred
-        intersection = torch.sum(multiple, dim=(2, 3)) # shape=(1,3)
+        intersection = torch.sum(multiple, dim=(2, 3))  # shape=(1,3)
         # intersection = np.sum(multiple, axis=[1, 2, 3])
-        union = torch.sum(y_true, dim=(2,3)) + torch.sum(y_pred, dim=(2,3))
+        union = torch.sum(y_true, dim=(2, 3)) + torch.sum(y_pred, dim=(2, 3))
         return torch.mean((2. * intersection + smooth) / (union + smooth), dim=1)
+
     out = 1. - dice_coef(y_true, y_pred, smooth=1)
     out = out.sum() / len(y_true)
     # print(out, out.grad, sep='\t')
     return out
+
+
 def Accuracy(predict, target):
     '''
     -------------------Accuracy TEST-------------------
@@ -113,16 +126,18 @@ def Accuracy(predict, target):
     classes = torch.max(predict).to(torch.int)
     acc, dice_c = 0, 0
     for cls in range(classes):
-        cls = cls+1
+        cls = cls + 1
         TP = torch.sum((predict == cls) * (target == cls))
         FP = torch.sum(predict == cls) - TP
         FN = torch.sum(target == cls) - TP
         TN = torch.sum((predict != cls) * (target != cls))
-        precision = TP / (TP+FP)
-        recall = TP / (TP+FN)
+        precision = TP / (TP + FP)
+        recall = TP / (TP + FN)
         acc += (TP + TN) / (TP + FP + FN + TN)
-        dice_c += (2 * TP + 1e-16) / (torch.sum(predict == cls) + torch.sum(target == cls) +1e-16)
-    return acc / (classes+1), dice_c / (classes+1)
+        dice_c += (2 * TP + 1e-16) / (torch.sum(predict == cls) + torch.sum(target == cls) + 1e-16)
+    return acc / (classes + 1), dice_c / (classes + 1)
+
+
 class DiceLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceLoss, self).__init__()
@@ -139,6 +154,8 @@ class DiceLoss(nn.Module):
         dice = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
 
         return 1 - dice
+
+
 def dice_loss(target, predictive, ep=1e-8):
     '''
     陳中銘老師推薦的指標
@@ -147,6 +164,8 @@ def dice_loss(target, predictive, ep=1e-8):
     union = torch.sum(predictive) + torch.sum(target) + ep
     loss = 1 - intersection / union
     return loss
+
+
 def weight_cross_entropy(output, target, wce_beta):
     '''
 
@@ -191,6 +210,8 @@ def weight_cross_entropy(output, target, wce_beta):
     loss = torch.sum(loss, axis=0)
     loss = torch.mean(loss)
     return loss
+
+
 class LogNLLLoss(_WeightedLoss):
     '''
     來自MedT metrics.py
@@ -214,11 +235,13 @@ class LogNLLLoss(_WeightedLoss):
     #                          ignore_index=self.ignore_index)
     def forward(self, y_input, y_target):
         if y_target.dim() == 4:
-            y_target = y_target.squeeze(1) # target的size需要是(N,H,W), output的channel數量是target的內部值(整數)
+            y_target = y_target.squeeze(1)  # target的size需要是(N,H,W), output的channel數量是target的內部值(整數)
         # y_input = torch.log(y_input + np.finfo(np.float32).eps)
         return cross_entropy(y_input.float(), y_target.long(), weight=self.weight,
                              ignore_index=self.ignore_index)
-def NLLLoss(x ,target, _2class=True):
+
+
+def NLLLoss(x, target, _2class=True):
     def f_2class(mask, dim=1):
         '''
         return
@@ -230,10 +253,13 @@ def NLLLoss(x ,target, _2class=True):
         bg_mask = torch.as_tensor((mask) == 0, dtype=torch.int32)
         mask = torch.cat((mask, bg_mask), dim=dim)
         return mask
+
     if _2class and x.shape[1] != 1:
-        target = f_2class(target, dim=1) # (b,2,h,w)
-    torch.nn.NLLLoss(x ,target.long())
-def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
+        target = f_2class(target, dim=1)  # (b,2,h,w)
+    torch.nn.NLLLoss(x, target.long())
+
+
+def IoU(y_pred, y_true, eps=1e-8, threshold=0.333):
     '''IoU
     y_pred:(b,2,h,w)
     y_true:(b,1,h,w)
@@ -247,11 +273,13 @@ def IoU(y_pred ,y_true,  eps=1e-8, threshold=0.333):
 
     intersection = y_pred * y_true
     union = y_pred + y_true - intersection
-    intersection = intersection.sum(dim=(0,2,3)) # (b,c*h*w), clip by channels, expect shape :[c nums]
-    union = union.sum(dim=(0,2,3)) # (b,c*h*w), clip by channels, expect shape :[c nums]
+    intersection = intersection.sum(dim=(0, 2, 3))  # (b,c*h*w), clip by channels, expect shape :[c nums]
+    union = union.sum(dim=(0, 2, 3))  # (b,c*h*w), clip by channels, expect shape :[c nums]
     output = (intersection + eps) / (union + eps)
     output = torch.max(output)
     return output
+
+
 def classwise_iou(output, gt):
     """
     來自MedT metrics.py
@@ -264,18 +292,20 @@ def classwise_iou(output, gt):
     EPSILON = 1e-32
     # EPSILON = 0
     dims = (0, *range(2, len(output.shape)))
-    gt = gt.squeeze(1)# to (B,H,W)
+    gt = gt.squeeze(1)  # to (B,H,W)
     gt = gt.type(torch.int64)
     # 調整gt的class數，變成和output相同，(4,2,h,w), 兩個dim為相反陣列()
     # EX：[[1,1,0,0,1,0,1],[0,0,1,1,0,1,0]]
     gt = torch.zeros_like(output).scatter_(1, gt[:, None, :], 1)
-    intersection = output*gt
+    intersection = output * gt
     union = output + gt - intersection
     iou_loss = (intersection.sum(dim=dims).float() + EPSILON) / (union.sum(dim=dims) + EPSILON)
     if not len(iou_loss) == 1:
         iou_loss = iou_loss.sum() / len(iou_loss)
 
     return iou_loss
+
+
 def classwise_f1(output, gt, threshold=0.333, testing=False):
     """
     來自MedT metrics.py
@@ -286,7 +316,7 @@ def classwise_f1(output, gt, threshold=0.333, testing=False):
     測試：
     f1的輸入影像在此函數中改為channel=1，如果讓channel>1，會讓f1多0.5?
     """
-    n,c,h,w = output.shape
+    n, c, h, w = output.shape
     # print(f'mask: {gt.shape}') # 1,1,h,w
     # --- 歸一化+二值化 ---
     output = scaling(output)
@@ -297,8 +327,7 @@ def classwise_f1(output, gt, threshold=0.333, testing=False):
     if c == 1:
         n_classes = output.shape[1]
     if c > 1:
-        n_classes = output.shape[1]-1 # 2 - 1
-
+        n_classes = output.shape[1] - 1  # 2 - 1
 
     epsilon = 1e-8
     # output = torch.argmax(output, dim=1) # 1,H,W
@@ -306,9 +335,9 @@ def classwise_f1(output, gt, threshold=0.333, testing=False):
     # -- if want source code
     # to github https://github.com/jeya-maria-jose/Medical-Transformer/blob/main/lib/metrics.py ---
     # output = torch.argmax(output, dim=1)
-    true_positives = torch.tensor([((output == i+1) * (gt == i+1)).sum() for i in range(n_classes)]).float()
-    selected = torch.tensor([(output == i+1).sum() for i in range(n_classes)]).float()
-    relevant = torch.tensor([(gt == i+1).sum() for i in range(n_classes)]).float()
+    true_positives = torch.tensor([((output == i + 1) * (gt == i + 1)).sum() for i in range(n_classes)]).float()
+    selected = torch.tensor([(output == i + 1).sum() for i in range(n_classes)]).float()
+    relevant = torch.tensor([(gt == i + 1).sum() for i in range(n_classes)]).float()
 
     # pdb.set_trace()
     precision = (true_positives + epsilon) / (selected + epsilon)
@@ -319,6 +348,8 @@ def classwise_f1(output, gt, threshold=0.333, testing=False):
     if not len(classwise_f1) == 1:
         classwise_f1 = classwise_f1.sum() / len(classwise_f1)
     return classwise_f1
+
+
 def binary_cross_entropy(x, target, _2class=False):
     '''
     input :
@@ -328,6 +359,7 @@ def binary_cross_entropy(x, target, _2class=False):
     :parameter
     _2class: 是否使用分層mask輸出(目標層、背景層)。mask.shape=(b,2,h,w)
     '''
+
     def f_2class(mask, dim=1):
         '''
         return
@@ -339,15 +371,15 @@ def binary_cross_entropy(x, target, _2class=False):
         bg_mask = torch.as_tensor((mask) == 0, dtype=torch.int32)
         mask = torch.cat((mask, bg_mask), dim=dim)
         return mask
-    b,c,h,w = target.shape
-    x = x # b,c,h,w
-    target = target.reshape(b,c,h,w)
+
+    b, c, h, w = target.shape
+    x = x  # b,c,h,w
+    target = target.reshape(b, c, h, w)
     x = x.float()
     if _2class and x.shape[1] != 1:
-        target = f_2class(target, dim=1) # (b,2,h,w)
+        target = f_2class(target, dim=1)  # (b,2,h,w)
     output = F.binary_cross_entropy_with_logits(x, target.float())
     return output
-
 
 
 if __name__ == '__main__':
@@ -368,6 +400,7 @@ if __name__ == '__main__':
     import sys
     import yaml
     import os
+
 
     def parser_args(model_name=None):
         parser = argparse.ArgumentParser(description='test loss function')
@@ -424,7 +457,6 @@ if __name__ == '__main__':
                             help='使用深層監督')
         parser.add_argument('--training', type=bool, default=args['meta']['training'], help='訓練狀態??')
 
-
         # Optimizer Setting
         parser.add_argument('--lr', type=float, default=args['optimization']['lr'], help='learning rate')
         parser.add_argument('--scheduler', type=str, default=args['criterion']['scheduler'], help='使用的scheduler')
@@ -455,6 +487,7 @@ if __name__ == '__main__':
 
         return args
 
+
     # assign parameters
     us_dataset = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT"
     test_ds = r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2"
@@ -462,7 +495,7 @@ if __name__ == '__main__':
     args = parser_args()
 
     # build dataloader and model
-    dataset = ImageToImage2D(test_ds, img_size=(args.imgsize,args.imgsize), merge_train=False)
+    dataset = ImageToImage2D(test_ds, img_size=(args.imgsize, args.imgsize), merge_train=False)
     DL = DataLoader(dataset, batch_size=args.batchsize, shuffle=True)
     model = use_model(args)
 
@@ -477,17 +510,19 @@ if __name__ == '__main__':
         oriout = out = model(image.cuda())
 
         # print(f'輸入影像大小:{image.shape}')
-        assert image.shape == (args.batchsize, 3, args.imgsize, args.imgsize), f'correct:{image.shape},'# confirm input format
-        assert mask.shape == (args.batchsize, 1, args.imgsize, args.imgsize), f'correct:{mask.shape},' # confirm input format
+        assert image.shape == (
+        args.batchsize, 3, args.imgsize, args.imgsize), f'correct:{image.shape},'  # confirm input format
+        assert mask.shape == (
+        args.batchsize, 1, args.imgsize, args.imgsize), f'correct:{mask.shape},'  # confirm input format
 
-
-        out = sigmoid_scaling(out) # 使用sigmoid歸一化
-        out_iou = (out > 0.333).float() # 影像二值化
+        out = sigmoid_scaling(out)  # 使用sigmoid歸一化
+        out_iou = (out > 0.333).float()  # 影像二值化
         # out_iou = out
-        assert out.shape == (args.batchsize,args.classes,args.imgsize,args.imgsize), f'模型輸出格式與loss輸入格式不符合，輸入格式為{out.shape},應為(1,2,256,256)'
+        assert out.shape == (args.batchsize, args.classes, args.imgsize,
+                             args.imgsize), f'模型輸出格式與loss輸入格式不符合，輸入格式為{out.shape},應為(1,2,256,256)'
         # o = weight_cross_entropy(x, mask, wce_beta=1e-07)
-        iou_test = IoU(out_iou,mask.cuda())
-        iou = classwise_iou(out_iou,mask.cuda())
+        iou_test = IoU(out_iou, mask.cuda())
+        iou = classwise_iou(out_iou, mask.cuda())
         nll = LogNLLLoss()(out, mask.cuda())
         f1_s = classwise_f1(out, mask.cuda())
         wce = weight_cross_entropy(oriout, mask.cuda(), 1e-8)
@@ -500,32 +535,30 @@ if __name__ == '__main__':
         # print('classwise_f1:', f1_s)
         print('dice_loss:', dice_loss)
         print('f1_s:', f1_s)
-        print('iou:',  iou)
+        print('iou:', iou)
 
-
-
-        out = out.permute(0,3,2,1).to('cpu').detach().numpy()
-        oriout = oriout.permute(0,3,2,1).to('cpu').detach().numpy()
-        out_iou = out_iou.permute(0,3,2,1).to('cpu').detach().numpy()
-        #顯示影像
+        out = out.permute(0, 3, 2, 1).to('cpu').detach().numpy()
+        oriout = oriout.permute(0, 3, 2, 1).to('cpu').detach().numpy()
+        out_iou = out_iou.permute(0, 3, 2, 1).to('cpu').detach().numpy()
+        # 顯示影像
         # pdb.set_trace()
-        plt.subplot(2,2,1)
+        plt.subplot(2, 2, 1)
         plt.axis('off')
-        plt.xticks([]),plt.yticks([])
+        plt.xticks([]), plt.yticks([])
         plt.title('original')
-        plt.imshow(image.squeeze(0).permute(2,1,0))
+        plt.imshow(image.squeeze(0).permute(2, 1, 0))
 
         plt.subplot(2, 2, 2)
         plt.axis('off')
         plt.xticks([]), plt.yticks([])
         plt.title('mask')
-        plt.imshow(mask.squeeze(0).permute(2,1,0))
+        plt.imshow(mask.squeeze(0).permute(2, 1, 0))
 
-        plt.subplot(2,2,3)
+        plt.subplot(2, 2, 3)
         plt.axis('off')
-        plt.xticks([]),plt.yticks([])
+        plt.xticks([]), plt.yticks([])
         plt.title('output')
-        plt.imshow(oriout.squeeze(0)[:,:,1])
+        plt.imshow(oriout.squeeze(0)[:, :, 1])
 
         plt.subplot(2, 2, 4)
         plt.axis('off')

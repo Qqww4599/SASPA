@@ -5,13 +5,15 @@ import cv2
 import numpy as np
 import sys
 
+
 def remove_readonly(func, path, _):
-    "Clear the readonly bit and reattempt the removal"
+    """Clear the readonly bit and reattempt the removal"""
     os.chmod(path, stat.S_IWRITE)
     func(path)
 
+
 def init_training_result_folder(path):
-    '''初始化並創建資料夾'''
+    """初始化並創建資料夾"""
     files = os.listdir(path)
     for file in files:
         cur_path = os.path.join(path,file)
@@ -24,6 +26,7 @@ def init_training_result_folder(path):
     if not os.path.exists(f'{path}/test_files'):
         os.makedirs(f'{path}/test_files')
 
+
 def save_model_mode(model, model_name):
     '''
     儲存model權重
@@ -32,6 +35,7 @@ def save_model_mode(model, model_name):
     save_name = model_name
     torch.save(model.state_dict(), save_name)
     print(f"1 epoch finish!!! {model_name} are saved!", sep='\t')
+
 
 def THRESH_BINARY_for_pred(x, return_tensor=False):
     '''
@@ -42,15 +46,15 @@ def THRESH_BINARY_for_pred(x, return_tensor=False):
     :return Torch.tensor or ndarray
     '''
 
-    b,c,h,w = x.shape
+    b, c, h, w = x.shape
     if x.ndim == 4:
-        pred = x.squeeze(0) # 去掉batch維度
-        x = pred.permute(1,2,0) # switch to H,W,C
+        pred = x.squeeze(0)  # 去掉batch維度
+        x = pred.permute(1, 2, 0)  # switch to H,W,C
     if torch.is_tensor(x):
         # print('Input shape：', x.shape)
         x = torch.sigmoid(x)
         x = x.numpy()
-    x = x*255
+    x = x * 255
     x = x.astype(np.uint8)
 
     # 用全局自適應GAUSSIAN
@@ -63,13 +67,14 @@ def THRESH_BINARY_for_pred(x, return_tensor=False):
     if x.ndim == 2:
         x = np.expand_dims(x, axis=2)
     if return_tensor:
-        x = x.transpose((2,0,1))
+        x = x.transpose((2, 0, 1))
         x = np.expand_dims(x, axis=0)
         return torch.tensor(x)
     return x
 
+
 def Double_check_training_setting():
-    reject_choices = {'no','n',}
+    reject_choices = {'no', 'n', }
     direc_check = input('確認儲存路徑是否正確(Y/N)?').lower()
     if 'n' in direc_check:
         print('再次確認並重新開始測試')
@@ -86,7 +91,7 @@ def Double_check_training_setting():
     if 'n' in meta_check:
         print('再次確認並重新開始測試')
         sys.exit()
-    print('=-'*25)
+    print('=-' * 25)
     return None
 
 

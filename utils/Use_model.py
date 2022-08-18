@@ -4,6 +4,7 @@ import torch.optim.lr_scheduler as scheduler
 import argparse
 import sys
 sys.path.append(r'D:\Programming\AI&ML\MainResearch\utils\zoo')
+from . import loss_fn_adv
 
 # __name__ = []
 
@@ -70,13 +71,17 @@ def use_model(args):
         from .zoo.___Deprecated___Medt_retrofit import medt_retrofit_model_use
         model = medt_retrofit_model_use(args)
     elif model_name == 'pranet':
-        from MainResearch.utils.zoo.Test_models.Reverse_AttentionUNet.reverse_attn_Unet import Reverse_attn_unet
+        from utils.zoo.Test_models.Reverse_AttentionUNet.reverse_attn_Unet import Reverse_attn_unet
         model = Reverse_attn_unet()
     elif model_name == 'segformer':
-        from .zoo.COMPARE_MODEL.scformer.models import build
+        from utils.zoo.COMPARE_MODEL.scformer.models import build
         model = build(model_name='segformer', class_num=args.classes)
-    elif model_name == 'FPN_resnet':
+    elif model_name == 'FPN_resnet34':
         model = smp.FPN(encoder_name='resnet34', encoder_weights=None, classes=args.classes)
+    elif model_name == 'FPN_resnet18':
+        model = smp.FPN(encoder_name='resnet18', encoder_weights=None, classes=args.classes)
+    elif model_name == 'FPN_resnet50':
+        model = smp.FPN(encoder_name='resnet50', encoder_weights=None, classes=args.classes)
     elif 'ResAttnModule' in model_name or 'TransFPN_Module' in model_name:
         from .zoo.Test_models.TransFPNSeries import get_model
         model = get_model(args)
@@ -88,18 +93,22 @@ def use_model(args):
     elif model_name == 'deeplabv3+':
         from segmentation_models_pytorch.decoders.deeplabv3 import DeepLabV3Plus
         model = DeepLabV3Plus()
+    elif model_name == 'SwinUnet':
+        from utils.zoo.COMPARE_MODEL.Swin_Unet.networks.swin_transformer_unet_skip_expand_decoder_sys import \
+            SwinTransformerSys
+        model = SwinTransformerSys(img_size=128, patch_size=16, window_size=12, num_classes=1)
     elif model_name == 'SwinDeeplabv3Plus':
-        from MainResearch.utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3plus import swindeeplabv3plus
-        model = swindeeplabv3plus()
+        from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver13 import swindeeplabv3plus_ver13
+        model = swindeeplabv3plus_ver13()
     # --------------------測試新model使用------------------------
     elif '<test>' in args.training_details:
         """
         :keyword <test>是測試項目的特別標記。正式項目訓練需要拔掉
         
-        測試項目: Deeplabv3Modified
+        測試項目: swindeeplabv3plus_ver20
         """
-        from MainResearch.utils.zoo.Test_models.TransFPNSeries import get_model
-        model = get_model(args)
+        from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver20 import swindeeplabv3plus_ver20
+        model = swindeeplabv3plus_ver20(swinblock=True)
     else:
         raise ValueError(f'Should enter exist model name!! Now put model name is {model_name}!!!')
     model.to(args.device)
@@ -116,7 +125,7 @@ def use_model(args):
 def use_scheduler(args, opt):
     scheduler_name = str(args.scheduler)
     if scheduler_name == 'ReduceLROnPlateau':
-        return scheduler.ReduceLROnPlateau(optimizer=opt, mode='min', factor=0.5, patience=10, verbose=True)
+        return scheduler.ReduceLROnPlateau(optimizer=opt, mode='min', factor=0.5, patience=10, verbose=False)
     if scheduler_name == 'CosineAnnealingLR':
         return scheduler.CosineAnnealingLR(optimizer=opt, T_max=10)  # T_max是週期的1/2
 
@@ -150,6 +159,10 @@ def use_loss_fn(args):
         loss = loss_fn.classwise_iou
     elif args.loss_fn == 'NLLLoss':
         loss = loss_fn.NLLLoss
+    elif args.loss_fn == 'BCEDicePenalizeBorderLoss':
+        loss = loss_fn_adv.BCEDicePenalizeBorderLoss()
+    elif args.loss_fn == 'BCEDiceFocalLoss':
+        loss = loss_fn_adv.BCEDiceFocalLoss(focal_param=0.5)
     else:
         raise ValueError(f'Please choose a loss function, input is {args.loss_fn}')
     # print('----- loss_fn_name: ',loss_fn_name, '-----')
@@ -162,7 +175,7 @@ if __name__ == '__main__':
 
     def parse_args():
         parser = argparse.ArgumentParser()
-        parser.add_argument('-modelname', type=str, default='SwinUNETR_from_monai')
+        parser.add_argument('-modelname', type=str, default='segformer')
         parser.add_argument('-device', type=str, default='cuda')
         parser.add_argument('-is', '--imgsize', type=int, default=128, help='圖片大小')
         parser.add_argument('-ic', '--imgchan', type=int, default=3, help='圖片通道')
