@@ -1,26 +1,86 @@
 # Swin-DeeplabV3+: Enhanced Segmentation Performance of Breast Tumor Ultrasound Images Using SwinBlock
 
-Swin-DeeplabV3+，目前屬於開發測試階段。未來將在此新增相關型介紹。
+Swin-DeeplabV3+是由DeeplabV3+為原型修改後加入Swin-Transformer模組的模型，結合原有CNN框架與作為特徵增強的Swin-attention，應用於超音波乳房腫瘤影像分割取得有效的結果。
+本模型架構使用Encoder-Decoder的建構方法。Encoder部分以ImageNet預訓練的權重之ResNet34網路作為特徵提取，；Decoder部分因原本DeeplabV3+的單一特徵使用多個stride擴張卷積不利於超音波影像，
+因此我們改良原本DeeplabV3+的ASPP模組，使用多種Encoder輸出特徵分別由ASPP的各種步距分別卷積，並在ASPP模組前方加入SwinBlock作為特徵增強使用。
+結果顯示我們的模型超越了原本的DeeplabV3+、CNN-based的ResNet-UNet以及Transforme-based的MedT等等。
 
-## Test models History
+# Introduction
+### Swin-DeeplabV3+ structure
+![SwinDeeplabv3+ structure](otherData/Swin-deeplabv3+structure.png)
 
-#### ModelLab `<1>`: SwinDeeplabv3Plus: 以deeplabv3+作為骨架，在ASPP module中加入Swin Blocks
+# Getting start
+config/train_config: 訓練參數設定
+```yaml
+data:
+　ds_path: Dataset path
+　...
+optimization:
+  epochs: epochs
+  batchsize: batchsize
+  ...
+save:
+  direc: Result saving path
+  ...
+```
+val_config.ini: 驗證/測試參數設定
+```ini
+[model_set]
+MOTHER_FOLDER = Result saving path
+Internal_validation_path = Internal validation dataset path
+External_validation_path = External validation dataset path
+```
+Dataset architecture
+```commandline
+Train dataset:
+    benign_new
+        images
+            image1
+            image2
+            ...
+        masks
+            mask1
+            mask2
+            ...
+    malignant_new
+        images
+            image1
+            image2
+            ...
+        masks
+            mask1
+            mask2
+            ...
+```
+```
+Test dataset(Including internal validation dataset):
+    images
+        image1
+        image2
+        ...
+    masks
+        mask1
+        mask2
+        ...
+```
 
-![SwinDeeplabv3+](otherData/Swin_Deeplabv3+.jpg)
+# Benchmark
+本測試以mIoU、Dice score作為模型效能評斷標準。另外也會用AUC還有Inference time來評斷模型預測結果的信心程度以及模型的推論時間。
 
-#### ModelLab `<2>`:TransFPN-Unet: ResNet34-Unet架構加入TransFPN
+![Beanchmark](otherData/模型綜合比較.png)
 
-![TransFPN-Unet](otherData/TransFPN(mobileViT).jpg)
 
+# Training Setting & Dataset
 ## Setting
-
-在此測試中我們使用的配置如下：
-
-##### Training Setting
-
 | images size | Epochs | Loss function            | batchsize | learning rate | weight decay | Accumulation |
 | ----------- | ------ | ------------------------ | --------- | ------------- | ------------ | ------------ |
-| 128 x 128   | 200    | `Binary cross-entropy` | 8 or 32   | 0.001         | 1e-5         | 4            |
+| 128 x 128   | 200    | `BCEDicePenalizeBorderLoss` | 8   | 0.001         | 1e-5         | 4            |
+## Dataset
+
+| Name | Num of images | Image size           | Format |
+| ----------- | ------ | ------------------------ | --------- | 
+| Baheya Foundation For Early Detection & Treatment Of Breast Cancer   | 647    | 500*500 | PNG   |
+| STU-Hospital   |  40   | 128*128 | PNG   |
 
 另外為了測試模型對於資料集的學習能力，採用k-fold=5的方式進行訓練。我們將採用兩種資料集分別用於訓練與測試使用:
 
@@ -28,29 +88,12 @@ Swin-DeeplabV3+，目前屬於開發測試階段。未來將在此新增相關�
 * Testing dataset: 42 breast cancer images
 
 測試模型性能分別以1/5的Training dataset與Testing dataset測試Internal validation與External validation。
+![k-fold architecture](otherData/kfold圖示Ver2.png)
 
-## Benchmark
 
-本測試以mIoU、Dice score作為模型效能評斷標準。另外也會用AUC還有Inference time來評斷模型預測結果的信心程度以及模型的推論時間。以下數值皆為External validation。
+# Result
+## Segmentation performance in different model
+![比較模型分割影像比較](otherData/比較模型分割影像比較.png)
 
-##### Compare models
-
-| Model               | mIoU           | Dice score     | AUC           | Inference time | Training time | Note |
-| ------------------- | -------------- | -------------- | ------------- | -------------- | ------------- | ---- |
-| Unet++resnet34      | 85.2%±1.68%   | 90.63%±0.77%  | 96.01%±0.45% | 0.0313         | 10934         |      |
-| Segformer           | 79.54%±8.08%  | 86.81%±5.37%  | 95.57%±2.23% | 0.0372         | 15560.04      |      |
-| Medical transformer | 47.56%±10.45% | 59.92%±11.34% | 84.6%±3%     | 0.3760         | 53753.18      |      |
-| AxialattentionUnet  | 51.93%±16.58% | 64.23%±13.72% | 85.56%±4.86% | 0.0375         | 12720.91      |      |
-| FPN_resnet34        | 82.69%±0.32%  | 89.1%±0.21%   | 95.45%±0.04% | 0.0189         | 8745.52       |      |
-| Deeplabv3           | 84.51%±0.07%  | 90.37%±0%     | 96.25%±0.1%  | 0.0123         | 10915.14      |      |
-| SwinUNETR           | 74.54%±0.02%  | 83.19%±0.08%  | 93.72%±0.05% | 0.0243         | 19736.67      |      |
-
-##### Test models
-
-| Model | mIoU | Dice score | AUC | Inference time | Training time | Note |
-| --- | ---- | ---------- | --- | -------------- | ------------- | ---- |
-| Swin-Deeplab+v3 |   74.46%±0.34%   |      84.6%±0.1%      |  94.73%±0.01%   |        0.0196         |       8553.8       |      |
-| TransFPN_Module_Unet_VANNILA  |   73.78%±0.52%   |      83.7%±0.42%      |  93.42%±0.11%   |       0.1042          |        37122.94       |      |
-
-### Result
-![External validation：Dice-score to MACs](otherData/Dice_score_to_MACs.png)
+## Inference time benchmark
+![InferenceTimeBenchmark](otherData/InferenceTimeBenchmark.png)

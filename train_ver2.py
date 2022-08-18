@@ -14,6 +14,7 @@ import argparse
 import yaml
 import logging
 import pprint
+import pickle
 
 '''
 Train script ver1.0
@@ -131,6 +132,9 @@ def main(args):
 
     time_end = time.time()
     print('training Done! Use {:.2f} s'.format(time_end - time_start))
+    if args.SaveAsPKL:  # 儲存成可部屬模型格式
+        with open(f'{args.direc}/model.pkl', 'wb') as f:
+            pkl_model = pickle.dumps(model, f)
 
     path = os.path.join(args.direc, 'TrainingLogger.txt')
     with open(path, 'w') as f:
@@ -203,6 +207,7 @@ def eval(val_dataset, model, folder_name, lossfn, args=None, binarization=False,
 
     if save_model and save_model_name:
         ou.save_model_mode(model, save_model_name)
+
     val_loss = test_loss / len(val_dataset)
     f1 = float(f1 / len(val_dataset))
     iou = float(iou / len(val_dataset))
@@ -294,6 +299,7 @@ def parser_args():
     parser.add_argument('--savefig_resize', type=bool, default=args['save']['savefig_resize'], help='savefig resize')
     parser.add_argument('--save_valid_img', type=bool, default=args['save']['save_valid_img'],
                         help='save validation result(in every save freq)')
+    parser.add_argument('--SaveAsPKL', type=bool, default=False, help='是否將模型儲存成.pkl(部署使用格式)')
 
     args = parser.parse_args()
 

@@ -68,13 +68,10 @@ binarization = 0 是否進行二值化
     r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_opt"
 
 reject = {'null', 'Null', 'No', 'no', 'n', '0', 'None', 'none', 'False'}
-TEST_DATA = {'Internal validation': r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\InterTEST",
-             'External validation': r"D:\Programming\AI&ML\(Dataset)STU-Hospital"}
 isOldTraining = False  # 之前測試輸出影像方向錯誤改正
-test_dataset = ['i', 'e']
 
 
-def args_parser(n_folds):
+def args_parser(n_folds, test_dataset: str):
     parser = argparse.ArgumentParser()
     with open('./val_config.ini') as fp:
         # source code from https://blog.csdn.net/wozaiyizhideng/article/details/107821713
@@ -84,18 +81,21 @@ def args_parser(n_folds):
         MOTHER_FOLDER = cfg.get('model_set', 'MOTHER_FOLDER')  # 快速配置文件使用。表示為Result的資料夾，為None時沒有效果
         model_path = cfg.get('model_set', 'model_path')  # 獲取config文件中model_set的model_path值
         training_setting_path = cfg.get('model_set', 'training_setting_path')
-        test_dataset = cfg.get('model_set', 'test_dataset')
+        # test_dataset = cfg.get('model_set', 'test_dataset')
+        Internal_validation_path = cfg.get('model_set', 'Internal_validation_path')
+        External_validation_path = cfg.get('model_set', 'External_validation_path')
         if test_dataset in {'Internal validation', 'I', 'in', 'i'}:
-            test_dataset_path = TEST_DATA['Internal validation']
+            test_dataset_path = Internal_validation_path
         else:
-            test_dataset_path = TEST_DATA['External validation']
+            test_dataset_path = External_validation_path
         scale = cfg.getboolean('model_set', 'scale')  # 取得bool
         save_path = cfg.get('model_set', 'save_path')
         show_image = cfg.getboolean('model_set', 'show_image')
         save_specific_image = cfg.getboolean('model_set', 'save_specific_image')
         log_file_path = cfg.get('model_set', 'test_log')
         RecordType = cfg.get('model_set', 'RecordType')
-
+        Internal_validation_path = cfg.get('model_set', 'Internal_validation_path')
+        External_validation_path = cfg.get('model_set', 'External_validation_path')
 
     if MOTHER_FOLDER not in reject:
         print('---MOTHER_FOLDER---')
@@ -104,7 +104,6 @@ def args_parser(n_folds):
         save_path = os.path.join(MOTHER_FOLDER, 'test_files')
         log_file_path = os.path.join(MOTHER_FOLDER, f'TestResultLog.txt')
 
-    # raise NotImplemented('還沒寫完!!')
     def _process_main(fname):
         import logging
 
@@ -118,6 +117,8 @@ def args_parser(n_folds):
 
     test_args = _process_main(training_setting_path)
 
+    parser.add_argument('--Internal_validation_path', type=str, default=Internal_validation_path, help='內部測試集位置')
+    parser.add_argument('--External_validation_path', type=str, default=External_validation_path, help='外部測試集位置')
     parser.add_argument('--training_details', type=str, default=test_args['meta']['Name'])
     parser.add_argument('-mp', '--model_path', type=str, default=model_path)
     parser.add_argument('-mn', '--modelname', default=test_args['meta']['modelname'], type=str)
@@ -212,7 +213,7 @@ def calculate(model_out, mask):
 
 def InterOrOuterDataset(in_or_out: str) -> str:
     """是否是內部資料或外部資料測試 """
-    if in_or_out == TEST_DATA['Internal validation']:
+    if in_or_out == 'Internal validation':
         return 'InterDataset'
     else:
         return 'OuterDataset'
@@ -274,9 +275,9 @@ def write_a_row(
         mywriter.writerow(np.array(one_fold_data_array))
 
 
-def main(n_folds, test_dataset_path):
-    args = args_parser(n_folds)
-    dataloader = DataLoader(TestDataloader(test_dataset_path, args=args))
+def main(n_folds, test_dataset):
+    args = args_parser(n_folds, test_dataset)
+    dataloader = DataLoader(TestDataloader(args.test_dataset_path, args=args))
     # 載入模型
     model = use_model(args)
     model.load_state_dict(torch.load(args.model_path))  # 載入權重
@@ -349,7 +350,6 @@ def main(n_folds, test_dataset_path):
             f_name = os.path.join(bi_folder_path, f'{index} pred.png')
             imwrite(f_name, (gussan_th.numpy() * 255).astype('uint8'))
 
-
         ax = fig.add_subplot(2, 2, 3)
         ax.set_xlabel("")
         plt.xticks([]), plt.yticks([])
@@ -372,7 +372,7 @@ def main(n_folds, test_dataset_path):
         plt.clf()
         plt.close('all')
         continue
-    status = InterOrOuterDataset(test_dataset_path)
+    status = InterOrOuterDataset(test_dataset)
 
     """
     To Record:  mIoU, F1/Dice, AUC, Avg inference time
@@ -417,13 +417,14 @@ def main(n_folds, test_dataset_path):
 
 if __name__ == '__main__':
     TEST_DATA = {
-        'Internal validation': r"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\InterTEST",
-        'External validation': r"D:\Programming\AI&ML\(Dataset)STU-Hospital"}
+        'Internal validation': None,
+        'External validation': None}
+
     n_fold = 5
-    for dataset_path in TEST_DATA.values():
+    for dataset in TEST_DATA.keys():
         for i in range(n_fold):
             # try:
             #     main(i + 1, dataset_path)
             # except:
             #     pass
-            main(i + 1, dataset_path)
+            main(i + 1, dataset)

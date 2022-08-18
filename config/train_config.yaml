@@ -1,5 +1,5 @@
 criterion:
-  loss: bce
+  loss: BCEDicePenalizeBorderLoss
   scheduler: ReduceLROnPlateau
   optimizer: adamw
 data:
@@ -30,6 +30,6 @@ save:
   save_state_dict: True
   savemodel: True
   run_formal: False
-  direc: .\TotalResult_HAND\20220803\SwinDeeplabv3Plus newproj test
+  direc: .\TotalResult_HAND\20220817\SwinDeeplabv3Plus test
   savefig_resize: False
   threshold: 0.333

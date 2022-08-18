@@ -98,19 +98,17 @@ def use_model(args):
             SwinTransformerSys
         model = SwinTransformerSys(img_size=128, patch_size=16, window_size=12, num_classes=1)
     elif model_name == 'SwinDeeplabv3Plus':
-        from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3plus import swindeeplabv3plus
-        model = swindeeplabv3plus()
-
+        from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver13 import swindeeplabv3plus_ver13
+        model = swindeeplabv3plus_ver13()
     # --------------------測試新model使用------------------------
     elif '<test>' in args.training_details:
         """
         :keyword <test>是測試項目的特別標記。正式項目訓練需要拔掉
         
-        測試項目: swindeeplabv3plus_ver12
+        測試項目: swindeeplabv3plus_ver20
         """
-        from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver13 import swindeeplabv3plus_ver13
-        # from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_Based import swindeeplabv3plus_MODIFIED
-        model = swindeeplabv3plus_ver13(swinblock=True)
+        from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver20 import swindeeplabv3plus_ver20
+        model = swindeeplabv3plus_ver20(swinblock=True)
     else:
         raise ValueError(f'Should enter exist model name!! Now put model name is {model_name}!!!')
     model.to(args.device)
