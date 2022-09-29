@@ -1,12 +1,12 @@
-# Swin-DeeplabV3+: Enhanced Segmentation Performance of Breast Tumor Ultrasound Images Using SwinBlock
+# SASPA：Enhanced Segmentation Performance of Breast Tumor Ultrasound Images Using Swin-Atrous-Spatial-Pyramid-Assembly
 
-Swin-DeeplabV3+是由DeeplabV3+為原型修改後加入Swin-Transformer模組的模型，結合原有CNN框架與作為特徵增強的Swin-attention，應用於超音波乳房腫瘤影像分割取得有效的結果。
+SASPA是由DeeplabV3+為原型修改後加入Swin-Transformer模組的模型，結合原有CNN框架與作為特徵增強的Swin-attention，應用於超音波乳房腫瘤影像分割取得有效的結果。
 本模型架構使用Encoder-Decoder的建構方法。Encoder部分以ImageNet預訓練的權重之ResNet34網路作為特徵提取，；Decoder部分因原本DeeplabV3+的單一特徵使用多個stride擴張卷積不利於超音波影像，
 因此我們改良原本DeeplabV3+的ASPP模組，使用多種Encoder輸出特徵分別由ASPP的各種步距分別卷積，並在ASPP模組前方加入SwinBlock作為特徵增強使用。
 結果顯示我們的模型超越了原本的DeeplabV3+、CNN-based的ResNet-UNet以及Transforme-based的MedT等等。
 
 # Introduction
-### Swin-DeeplabV3+ structure
+### SASPA structure
 ![SwinDeeplabv3+ structure](otherData/Swin-deeplabv3+structure.png)
 
 # Getting start
