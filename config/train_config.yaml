@@ -1,5 +1,6 @@
 criterion:
   loss: BCEDicePenalizeBorderLoss
+#  loss: bce
   scheduler: ReduceLROnPlateau
   optimizer: adamw
 data:
@@ -13,12 +14,14 @@ data:
 logging:
   folder: .\config
 meta:
-  Name: SwinDeeplabv3Plus newproj test
-  modelname: SwinDeeplabv3Plus
+  Name: None # Note this test for what
+  modelname: medt
+  TrainState: Pretrain # Pretrain/Train
   device: cuda:0
+  LOAD_PRETRAIN_WEIGHT: False  # Whether load pretrain weight or not
 optimization:
-  epochs: 5
-  batchsize: 32
+  epochs: 200
+  batchsize: 8
   lr: 0.001
   weight_decay: 1e-5
   train_accumulation_steps: 4
@@ -29,7 +32,7 @@ save:
   save_valid_img: True
   save_state_dict: True
   savemodel: True
-  run_formal: False
-  direc: .\TotalResult_HAND\20220817\SwinDeeplabv3Plus test
+  run_formal: True
+  direc: .\TotalResult_HAND\20220908\None
   savefig_resize: False
   threshold: 0.333

@@ -73,7 +73,7 @@ isOldTraining = False  # 之前測試輸出影像方向錯誤改正
 
 def args_parser(n_folds, test_dataset: str):
     parser = argparse.ArgumentParser()
-    with open('./val_config.ini') as fp:
+    with open('./config/val_config.ini') as fp:
         # source code from https://blog.csdn.net/wozaiyizhideng/article/details/107821713
         cfg = configparser.ConfigParser()
         cfg.read_file(fp)  # 讀取段落, 此處段落包含：model_set
@@ -423,8 +423,8 @@ if __name__ == '__main__':
     n_fold = 5
     for dataset in TEST_DATA.keys():
         for i in range(n_fold):
-            # try:
-            #     main(i + 1, dataset_path)
-            # except:
-            #     pass
-            main(i + 1, dataset)
+            try:
+                main(i + 1, dataset)
+            except:
+                pass
+            # main(i + 1, dataset)

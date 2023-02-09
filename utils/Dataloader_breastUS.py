@@ -104,6 +104,7 @@ class JointTransform2D:
 
 class ImageToImage2D(Dataset):
     """
+    For BreastUS dataset.
     Reads the images and applies the augmentation transform on them.
     Usage:
         1. If used without the unet.model.Model wrapper, an instance of this object should be passed to
@@ -130,12 +131,13 @@ class ImageToImage2D(Dataset):
     """
 
     def __init__(self, dataset_path: str, joint_transform: Callable = None, Gray=False,
-                 merge_train:bool=True, img_size=(256,256), get_catagory=None, only_positive=True) -> None:
+                 img_size=(256,256), get_catagory=None, only_positive=True, datasetname='BreastUS') -> None:
 
         """
         path example:"D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT\benign_new"
         catagory: 是否使用類別
         only_positive: 只使用有腫瘤的影像訓練
+        datasetname: 資料集名稱
         """
 
         # 如果是merge_train直接輸入包含benign和malignant的路徑。EX：folder：normal_new,malignant_new,benign_new
@@ -151,7 +153,7 @@ class ImageToImage2D(Dataset):
         else:
             to_tensor = T.ToTensor()
             self.joint_transform = lambda x, y: (to_tensor(x), to_tensor(y))
-        if merge_train:
+        if datasetname == 'BreastUS':
             # Normal, Malignant, Benign全部一起訓練
             # benign_ls = os.listdir(os.path.join(self.input_path_benign))
             # malignant_ls = os.listdir(self.input_path_malignant)
@@ -168,23 +170,25 @@ class ImageToImage2D(Dataset):
                 catagory_path = os.path.join(self.dataset_path, catagory)
                 for folder in os.listdir(catagory_path):
                     if folder == 'images':
-                        folder_path = os.path.join(catagory_path,folder)
+                        folder_path = os.path.join(catagory_path, folder)
                         for image in os.listdir(folder_path):
                             # 直接加入images路徑
-                            self.images_list.append(os.path.join(folder_path,image))
+                            self.images_list.append(os.path.join(folder_path, image))
                     else:
 
                         folder_path = os.path.join(catagory_path, folder)
                         for mask in os.listdir(folder_path):
                             # 直接加入masks路徑
                             self.masks_list.append(os.path.join(folder_path, mask))
-            print(f'Training on {len(self.images_list)} images, categories is {self.get_catagory}')
+            print(f'Dataset is {datasetname}, Training on {len(self.images_list)} images, categories is {self.get_catagory}')
 
         else:
             self.input_path = os.path.join(dataset_path, 'images')
             self.output_path = os.path.join(dataset_path, 'masks')
             self.images_list = [os.path.join(self.input_path,i) for i in os.listdir(self.input_path)]
             self.masks_list = [os.path.join(self.output_path,i) for i in os.listdir(self.output_path)]
+            print(
+                f'Dataset is {datasetname}, Training on {len(self.images_list)} images')
 
     def __len__(self):
         return len(self.images_list)

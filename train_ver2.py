@@ -17,46 +17,42 @@ import pprint
 import pickle
 
 '''
-Train script ver1.0
+Training script version 2.0.0
 
-此model script為訓練模型所編寫，啟動時需要透過windows powershell啟動
-使用時需要選擇使用的model名稱、loss函數、訓練週期等參數
-
-注意事項:
-pass
+使用時於train_config設定model、loss、epochs等參數，DatasetConfig設定資料集路徑
 
 更新紀錄:
-    train ver1.0。
-        2022/4/18
+    Training script version 1。
         1. 加入 k_fold 訓練機制: Limitation: k_fold設定不可為1。
-    train ver1.0.1
-        2022/4/19
-        1. yaml功能。新增資料讀取方法
-        2. 資料視覺化與計算f1 score, iou計算影像相同
-        3. 新增deep supervise功能。都用if else來寫，目前非常不好維護，後面需要修改。
-    train ver1.1.0
-        2022/4/27
-        1. 更改程式架構: 分成Optimizer、K Fold、Training部分，增加註解
-        2. init_training_result_folder與save_model_mode移到新檔案Other_utils中
-        3. 目前問題: 模型進入第二個fold以後結果不良
-    train ver1.1.1
-        1. 加入訓練初始化，解決train ver1.1.0之第二個fold結果不良
-    train ver1.1.2
-        1. 加入cudnn_benchmark，加速運算
+        2. yaml功能。新增資料讀取方法
+        3. 資料視覺化與計算f1 score, iou計算影像相同
+        4. 新增deep supervise功能。都用if else來寫，目前非常不好維護，後面需要修改。
+        5. 更改程式架構: 分成Optimizer、K Fold、Training部分，增加註解
+        6. init_training_result_folder與save_model_mode移到新檔案Other_utils中
+        8. 加入訓練初始化
+        9. 加入cudnn_benchmark，加速運算
+        
+    Training script version 2.0.0
+        1. 加入Pretrain選項，於DatasetConfig選擇要使用PretrainDataset/TrainDataset以及使用PretrainWeight
 
 '''
-print('Training script version 1.1.0', 'Last edit in 20220427', sep='\n')
+print('Training script version 2.0.0', 'Last edit in 20220830', sep=', ')
 
 
 def main(args):
-    save_freq = args.save_freq
-    gray = False if args.imgchan == 3 else True
-    train_dataset = ImageToImage2D(args.train_dataset, img_size=(args.imgsize, args.imgsize),
-                                   get_catagory=args.catagory, Gray=gray)
+    save_freq = args.save_freq  # Freq of save model and valid model performance
+    gray = False if args.imgchan == 3 else True    # Training images is RGB or gray scale
+
+    # When pretraining on pretrain dataset. Modify dataset in ./config/DatasetConfig
+    if args.TrainState == 'Pretrain':
+        print('<<Pretraining.....>>')
+        train_dataset = ImageToImage2D(args.PretrainDataset, img_size=(args.imgsize, args.imgsize),
+                                   get_catagory=args.catagory, Gray=gray, datasetname=args.PretrainDatasetName)
+    else:
+        train_dataset = ImageToImage2D(args.train_dataset, img_size=(args.imgsize, args.imgsize),
+                                       get_catagory=args.catagory, Gray=gray, datasetname=args.TrainDatasetName)
     splits = KFold(shuffle=True, n_splits=int(args.k_fold), random_state=42)  # 設定random_state使輸出都一樣
 
-    # if args.run_formal:
-    #     OU.Double_check_training_setting()
     model = use_model(args)
     criteria = use_loss_fn(args)
     optimizer = use_opt(args, model)
@@ -65,7 +61,14 @@ def main(args):
     time_start = time.time()
 
     f_val_loss, f_f1, f_iou = 0.0, 0.0, 0.0
+
     for fold, (train_idx, val_idx) in enumerate(splits.split(train_dataset)):
+        # Add pretrain function
+        if args.LOAD_PRETRAIN_WEIGHT:
+            print(f'load pretrainWeight: {args.pretrainWeightName}')
+            model_weight = torch.load(args.pretrainWeight)
+            model.load_state_dict(model_weight)
+
         print('----- Fold {} -----'.format(fold + 1))
         train_sampler = SubsetRandomSampler(train_idx)
         test_sampler = SubsetRandomSampler(val_idx)
@@ -233,13 +236,18 @@ def parser_args():
             logger.info('loaded params...')
             pp = pprint.PrettyPrinter(indent=4)
             pp.pprint(params)
-        os.makedirs(params["save"]["direc"]) if os.path.exists(params["save"]["direc"]) is False else print(
+        try:
+            os.makedirs(params["save"]["direc"]) if os.path.exists(params["save"]["direc"]) is False else print(
             'folder is exist')
+        except:
+            pass
         return params
 
     absFilePath = os.path.abspath(__file__)
     fname = os.path.join(os.path.split(absFilePath)[0], 'config/train_config.yaml')
+    dataConfig = os.path.join(os.path.split(absFilePath)[0], 'config/DatasetConfig.yaml')
     args = _process_main(fname)
+    data = _process_main(dataConfig)
     print(args['meta']['modelname'])
     if args["save"]["run_formal"]:
         ou.Double_check_training_setting()
@@ -248,6 +256,7 @@ def parser_args():
     with open(dump, 'w') as f:  # 寫入檔案
         print('writing!!')
         yaml.dump(args, f)
+        yaml.dump(data, f)
     # Training parameter setting
     parser.add_argument('--epoch', default=args['optimization']['epochs'], type=int, help='需要跑的輪數')
     parser.add_argument('-bs', '--batch_size', default=args['optimization']['batchsize'], type=int)
@@ -256,16 +265,26 @@ def parser_args():
     parser.add_argument('-class', '--classes', type=int, default=args['data']['classes'],
                         help='model輸出影像通道數(grayscale)')
     parser.add_argument('-model', '--modelname', default=args['meta']['modelname'], type=str)
-    parser.add_argument('-ds_path', '--train_dataset', default=fr'{args["data"]["ds_path"]}', type=str,
+    parser.add_argument('-ds_path', '--train_dataset', default=fr'{data["TrainDataset"]["Path"]["Training data"]}', type=str,
                         help='訓練資料集位置')
-    parser.add_argument('-vd', '--val_dataset', type=str, default=args['data']['val_dataset'], help='驗證用資料集所在位置')
-    parser.add_argument('--catagory', type=int, default=args['data']['catagory'], help='使用類別資料與否。如果使用，將輸出正常0，有腫瘤1')
+    parser.add_argument( '--TrainDatasetName', default=fr'{data["TrainDataset"]["Name"]}', type=str,
+                        help='訓練資料集名稱')
+    parser.add_argument('-vd', '--val_dataset', type=str, default=data["TrainDataset"]["Path"]["Validation data"], help='驗證用資料集所在位置')
+    parser.add_argument('--catagory', type=int, default=args['data']['catagory'], help='使用類別資料與否') # 目前已棄用
+    parser.add_argument('--TrainState', type=str, choices=['Pretrain', 'NormalTrain'], default=args['meta']['TrainState'],
+                        help='訓練狀態，Pretrain/NormalTrain')
+    parser.add_argument('--LOAD_PRETRAIN_WEIGHT', type=bool, default=args['meta']['LOAD_PRETRAIN_WEIGHT'], help='是否載入預訓練權重')
+
+    parser.add_argument('--PretrainDataset', type=str, default=data["PretrainDataset"]["Path"]["Training data"], help='預訓練資料路徑')
+    parser.add_argument('--PretrainDatasetName', type=str, default=data["PretrainDataset"]["Name"], help='預訓練資料集名稱')
+    parser.add_argument('--pretrainWeight', type=str, default=data["PretrainWeight"]["Path"], help='預訓練權重，未填入視同無')
+    parser.add_argument('--pretrainWeightName', type=str, default=data["PretrainWeight"]["Name"], help='預訓練權重來源名稱')
 
     # Model training setting
     parser.add_argument('--training_details', type=str, default=args['meta']['Name'], help='訓練項目細節。training details')
     parser.add_argument('--device', type=str, default=args['meta']['device'], help='是否使用GPU訓練')
     parser.add_argument('-ds', '--dataset', choices=['BreastUS'], default=args['data']['dataset'],
-                        help='選擇使用的資料集，默認GS，預設BreastUS')
+                        help='(已棄用，改為使用DatasetConfig取資料)選擇使用的資料集，默認GS，預設BreastUS')
     parser.add_argument('--threshold', type=int, default=args['save']['threshold'],
                         help='設定model output後二值化的threshold, 介於0-1之間')
     parser.add_argument('--train_accumulation_steps', default=args['optimization']['train_accumulation_steps'],

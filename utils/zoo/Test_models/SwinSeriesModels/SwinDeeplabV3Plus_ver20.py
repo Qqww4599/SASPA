@@ -131,32 +131,23 @@ class ASPP(nn.Module):
     def __init__(self, in_channels, out_channels, atrous_rates, separable=False, swinblock=False):
         super(ASPP, self).__init__()
         modules = []
-        # modules.append(
-        #     nn.Sequential(
-        #         nn.Conv2d(in_channels, out_channels, 1, bias=False),
-        #         nn.BatchNorm2d(out_channels),
-        #         nn.ReLU(),
-        #     )
-        # )
         rate1, rate2, rate3 = tuple(atrous_rates)
         ASPPConvModule = ASPPConv if not separable else ASPPSeparableConv
 
         ASPPConvModule_rate1 = nn.Sequential(ASPPConvModule(128, out_channels, rate1),
                                              nn.AvgPool2d(kernel_size=2)
                                              )
+        self.Swinblock = None
         if swinblock:
-            modules.append(nn.Sequential(
-                BasicLayer(dim=128, depth=3, num_heads=8, window_size=(7, 7),
-                                                    drop_path=0.2, attn_drop=0.1),
-                                         ASPPConvModule_rate1))
-            modules.append(nn.Sequential(
-                BasicLayer(dim=256, depth=3, num_heads=8, window_size=(7, 7),
-                                                    drop_path=0.2, attn_drop=0.1),
-                                         ASPPConvModule(256, out_channels, rate3)))
-            modules.append(nn.Sequential(
-                BasicLayer(dim=512, depth=3, num_heads=8, window_size=(7, 7),
-                                                    drop_path=0.2, attn_drop=0.1),
-                                         ASPPPooling(512, out_channels)))
+            SWIN_IN_CHANNEL = 128
+            self.Swinblock = nn.Sequential(
+                BasicLayer(dim=SWIN_IN_CHANNEL, depth=3, num_heads=8, window_size=(7, 7),drop_path=0.2, attn_drop=0.1),
+                nn.Conv2d(SWIN_IN_CHANNEL, out_channels, kernel_size=3, padding=1, stride=1),
+                nn.AvgPool2d(kernel_size=2)
+            )
+            modules.append(nn.Sequential(ASPPConvModule_rate1))
+            modules.append(nn.Sequential(ASPPConvModule(256, out_channels, rate3)))
+            modules.append(nn.Sequential(ASPPPooling(512, out_channels)))
         else:
             modules.append(ASPPConvModule_rate1)
             # modules.append(ASPPConvModule(in_channels, out_channels, rate2))
@@ -173,10 +164,11 @@ class ASPP(nn.Module):
         )
 
     def forward(self, x):
-        feature1, feature2, feature3 = x  # (128, 16, 16), (256, 8, 8), (512, 8, 8)
-
         res = []
-        for conv, feature in zip(self.convs, x):
+        for i, (conv, feature) in enumerate(zip(self.convs, x)):
+            if i == 0 and self.Swinblock is not None:  # Only multiply Swinblock in ASPPConvModule_rate1 branch
+                res.append(self.Swinblock(feature) * conv(feature))
+                continue
             res.append(conv(feature))
         res = torch.cat(res, dim=1)
         return self.project(res)
@@ -223,8 +215,8 @@ def main():
     # Deeplabv3Plus = DeepLabV3Plus()
     # print(Deeplabv3Plus(testdata).shape)
 
-    model = swindeeplabv3plus_ver20(swinblock=True).encoder
-    print(model)
+    model = swindeeplabv3plus_ver20(swinblock=True)
+    print(model(testdata).shape)
     # total_params = sum(p.numel() for p in model.parameters())
     # print('{} parameter：{:8f}M'.format(model, total_params / 1000000))  # 確認模型參數數量
     # print(output.shape)

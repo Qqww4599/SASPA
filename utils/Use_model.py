@@ -101,7 +101,7 @@ def use_model(args):
         from utils.zoo.Test_models.SwinSeriesModels.SwinDeeplabV3Plus_ver13 import swindeeplabv3plus_ver13
         model = swindeeplabv3plus_ver13()
     # --------------------測試新model使用------------------------
-    elif '<test>' in args.training_details:
+    elif '<test>' in model_name:
         """
         :keyword <test>是測試項目的特別標記。正式項目訓練需要拔掉
         

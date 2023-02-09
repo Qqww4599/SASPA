@@ -1,13 +1,10 @@
-# Swin-DeeplabV3+: Enhanced Segmentation Performance of Breast Tumor Ultrasound Images Using SwinBlock
+# SASPA：The combination of Swinblock and Atrous convolutional pyramid enhances the segmentation performance of breast tumor ultrasound images
 
-Swin-DeeplabV3+是由DeeplabV3+為原型修改後加入Swin-Transformer模組的模型，結合原有CNN框架與作為特徵增強的Swin-attention，應用於超音波乳房腫瘤影像分割取得有效的結果。
-本模型架構使用Encoder-Decoder的建構方法。Encoder部分以ImageNet預訓練的權重之ResNet34網路作為特徵提取，；Decoder部分因原本DeeplabV3+的單一特徵使用多個stride擴張卷積不利於超音波影像，
-因此我們改良原本DeeplabV3+的ASPP模組，使用多種Encoder輸出特徵分別由ASPP的各種步距分別卷積，並在ASPP模組前方加入SwinBlock作為特徵增強使用。
-結果顯示我們的模型超越了原本的DeeplabV3+、CNN-based的ResNet-UNet以及Transforme-based的MedT等等。
+本研究提出名為SASPA(Swin Atrous Spatial Pyramid Assembly)模型，以DeeplabV3+之ASPP模組為基礎設計，特別針對超音波乳房腫瘤影像分割任務設計模型架構，改善特徵結合方式並加入Swinblock增加模型分割表現，並提出兩個版本的SASPA架構：SASPA-S與SASPA-P。此研究使用乳房腫瘤分割為主要任務，訓練資料集與測試資料分別使用不同來源的資料，並透過K-Fold、資料集分割，將測試分為內部資料測試與外部資料測試，測試模型對相同來源資料集與不同來源資料之泛化能力。
 
 # Introduction
-### Swin-DeeplabV3+ structure
-![SwinDeeplabv3+ structure](otherData/Swin-deeplabv3+structure.png)
+### SASPA structure
+![SASPA structure](otherData/Swin-deeplabv3+structure.png)
 
 # Getting start
 config/train_config: 訓練參數設定
@@ -67,7 +64,7 @@ Test dataset(Including internal validation dataset):
 # Benchmark
 本測試以mIoU、Dice score作為模型效能評斷標準。另外也會用AUC還有Inference time來評斷模型預測結果的信心程度以及模型的推論時間。
 
-![Beanchmark](otherData/模型綜合比較.png)
+![Beanchmark](otherData/benchmark1.png)
 
 
 # Training Setting & Dataset
@@ -78,7 +75,7 @@ Test dataset(Including internal validation dataset):
 ## Dataset
 
 | Name | Num of images | Image size           | Format |
-| ----------- | ------ | ------------------------ | --------- | 
+| ----------- | ------ | ------------------------ | --------- |
 | Baheya Foundation For Early Detection & Treatment Of Breast Cancer   | 647    | 500*500 | PNG   |
 | STU-Hospital   |  40   | 128*128 | PNG   |
 
@@ -93,7 +90,7 @@ Test dataset(Including internal validation dataset):
 
 # Result
 ## Segmentation performance in different model
-![比較模型分割影像比較](otherData/比較模型分割影像比較.png)
+![比較模型分割影像比較](otherData/benchmark1.png)
 
-## Inference time benchmark
-![InferenceTimeBenchmark](otherData/InferenceTimeBenchmark.png)
+## Inference Time to Dice score benchmark
+![InferenceTimeBenchmark](otherData/Dice_score_to_MACs.png)

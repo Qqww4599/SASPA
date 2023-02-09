@@ -150,12 +150,12 @@ class ASPP(nn.Module):
                                                     drop_path=0.2, attn_drop=0.1),
                                          ASPPConvModule_rate1))
             modules.append(nn.Sequential(
-                BasicLayer(dim=256, depth=3, num_heads=8, window_size=(7, 7),
-                                                    drop_path=0.2, attn_drop=0.1),
+                # BasicLayer(dim=256, depth=3, num_heads=8, window_size=(7, 7),
+                #                                     drop_path=0.2, attn_drop=0.1),
                                          ASPPConvModule(256, out_channels, rate3)))
             modules.append(nn.Sequential(
-                BasicLayer(dim=512, depth=3, num_heads=8, window_size=(7, 7),
-                                                    drop_path=0.2, attn_drop=0.1),
+                # BasicLayer(dim=512, depth=3, num_heads=8, window_size=(7, 7),
+                #                                     drop_path=0.2, attn_drop=0.1),
                                          ASPPPooling(512, out_channels)))
         else:
             modules.append(ASPPConvModule_rate1)

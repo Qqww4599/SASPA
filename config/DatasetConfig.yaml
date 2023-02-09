@@ -1,0 +1,16 @@
+TrainDataset:
+  Name: BreastUS
+  Path:
+    Training data: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\Dataset_BUSI_with_GT
+    Validation data: D:\Programming\AI&ML\(Dataset)breast Ultrasound lmage Dataset\archive\val_ds2
+PretrainDataset:
+  Name: Kvasir-SEG
+  Path:
+    Training data: D:\Programming\AI&ML\(Dataset)Kvasir-SEG
+    Validation data: D:\Programming\AI&ML\(Dataset)Kvasir-SEG\val_ds
+#    Training data: null
+#    Validation data: null
+PretrainWeight:
+  Name: Kvasir-SEG
+  Path: .\TotalResult_HAND\20220902\Kvasir-SEG trained on SwinDeeplabv3Plus 2.0 test\model_fold_1.pth
+#  Path: null
