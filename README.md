@@ -88,8 +88,8 @@ Test dataset(Including internal validation dataset):
 
 # Result
 ## Segmentation performance in different model
-![比較模型分割影像比較](otherData/beanchmark1.png)
-![比較模型分割影像比較](otherData/benchmark2.png)
+![比較模型分割影像比較](otherData/benchmark1.png)
+![比較模型分割影像比較](otherData/beanchmark2.png)
 
 ## Inference Time to Dice score benchmark
 ![InferenceTimeBenchmark](otherData/Dice_score_to_MACs.png)
