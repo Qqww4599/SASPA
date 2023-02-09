@@ -64,8 +64,6 @@ Test dataset(Including internal validation dataset):
 # Benchmark
 本測試以mIoU、Dice score作為模型效能評斷標準。另外也會用AUC還有Inference time來評斷模型預測結果的信心程度以及模型的推論時間。
 
-![Beanchmark](otherData/benchmark1.png)
-
 
 # Training Setting & Dataset
 ## Setting
@@ -90,7 +88,8 @@ Test dataset(Including internal validation dataset):
 
 # Result
 ## Segmentation performance in different model
-![比較模型分割影像比較](otherData/benchmark1.png)
+![比較模型分割影像比較](otherData/beanchmark1.png)
+![比較模型分割影像比較](otherData/benchmark2.png)
 
 ## Inference Time to Dice score benchmark
 ![InferenceTimeBenchmark](otherData/Dice_score_to_MACs.png)
